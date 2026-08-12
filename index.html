@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SISAF — Sistem Informasi Santri Al-Falah</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app"><div class="empty-state">Memuat SISAF...</div></div>
+  <div id="print-rapor"></div>
+
+  <!-- Urutan penting: config -> service implementations -> abstraksi -> app logic -->
+  <script src="config.js"></script>
+  <script src="mockDataService.js"></script>
+  <script src="supabaseDataService.js"></script>
+  <script src="dataService.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
