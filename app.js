@@ -193,7 +193,7 @@ async function render() {
 
 function renderLoginScreen() {
   const demoListHtml = DEMO_ACCOUNTS.map(a => `
-    <div class="demo-item" onclick="fillLogin('${a.email}','${a.password}')">
+    <div class="demo-item" data-action="fillLogin" data-email="${a.email}" data-password="${a.password}">
       <span>${a.label}</span><b>${a.email}</b>
     </div>
   `).join('');
@@ -236,7 +236,7 @@ async function renderAppShell() {
     .filter(item => !item.roles || item.roles.includes(state.user.role))
     .map(item => `
     <li class="${state.view === item.key ? 'active' : ''}">
-      <a onclick="goTo('${item.key}')"><span class="dot"></span>${item.label}</a>
+      <a data-action="goTo" data-view="${item.key}"><span class="dot"></span>${item.label}</a>
     </li>
   `).join('');
 
@@ -246,7 +246,7 @@ async function renderAppShell() {
       <div class="top-actions">
         <div class="top-user"><b>${state.user.nama}</b>${ROLE_LABEL[state.user.role]}</div>
         <div class="avatar">${initials}</div>
-        <button class="btn-logout" onclick="handleLogout()">Keluar</button>
+        <button class="btn-logout" data-action="handleLogout">Keluar</button>
       </div>
     </div>
     <div class="shell">
@@ -412,7 +412,7 @@ async function santriTableHtml(santriList) {
     const k = await dataService.getKelasById(s.kelas_id);
     return `
       <tr>
-        <td><a onclick="openSantri('${s.id}')">${s.nama}</a></td>
+        <td><a data-action="openSantri" data-santri-id="${s.id}">${s.nama}</a></td>
         <td>${s.nis}</td>
         <td>${k ? k.nama : '-'}</td>
         <td>${s.angkatan}</td>
@@ -433,13 +433,13 @@ async function santriTableHtml(santriList) {
 async function renderDetailSantri(santriId) {
   const santri = await dataService.getSantriById(santriId, state.user);
   if (!santri) {
-    return `<div class="empty-state">Santri tidak ditemukan atau tidak dapat diakses oleh peran Anda.<br><a onclick="goTo('daftar')" style="color:var(--primary-700);font-weight:600;">← Kembali ke Daftar Santri</a></div>`;
+    return `<div class="empty-state">Santri tidak ditemukan atau tidak dapat diakses oleh peran Anda.<br><a data-action="goTo" data-view="daftar" style="color:var(--primary-700);font-weight:600;">← Kembali ke Daftar Santri</a></div>`;
   }
   const kelasInfo = await dataService.getKelasById(santri.kelas_id);
   const initials = santri.nama.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
 
   const tabsHtml = TABS.map(t => `
-    <a onclick="setTab('${t.key}')" class="${state.activeTab === t.key ? 'active' : ''}"
+    <a data-action="setTab" data-tab="${t.key}" class="${state.activeTab === t.key ? 'active' : ''}"
        style="padding:10px 2px 12px;font-size:13.5px;font-weight:${state.activeTab === t.key ? '700' : '500'};
        color:${state.activeTab === t.key ? 'var(--primary-900)' : 'var(--ink-faint)'};
        border-bottom:${state.activeTab === t.key ? '2.5px solid var(--accent-500)' : '2.5px solid transparent'};
@@ -456,7 +456,7 @@ async function renderDetailSantri(santriId) {
   else if (state.activeTab === 'status') tabContent = await renderTabStatus(santri);
 
   return `
-    <a onclick="goTo('daftar')" style="color:var(--primary-700);font-weight:600;font-size:12.5px;">← Daftar Santri</a>
+    <a data-action="goTo" data-view="daftar" style="color:var(--primary-700);font-weight:600;font-size:12.5px;">← Daftar Santri</a>
     <div class="panel" style="display:flex;gap:18px;align-items:center;margin-top:10px;">
       <div style="width:64px;height:64px;border-radius:50%;background:linear-gradient(155deg,var(--accent-400),var(--primary-700));
         display:flex;align-items:center;justify-content:center;color:#fff;font-family:'Fraunces',serif;font-size:22px;font-weight:600;flex:none;">${initials}</div>
@@ -502,7 +502,7 @@ async function renderTabAkademik(santri) {
       <div class="panel">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <h2 class="panel-title" style="margin:0;">${semester}</h2>
-          <button class="btn-logout" onclick="handlePrintRapor('${santri.id}', '${semester}')">Cetak Rapor</button>
+          <button class="btn-logout" data-action="handlePrintRapor" data-santri-id="${santri.id}" data-semester="${semester}">Cetak Rapor</button>
         </div>
         <table>
           <thead><tr><th>Mata Pelajaran</th><th>Nilai</th><th class="num">Poin</th><th class="num">SKS</th><th class="num">Poin Diperoleh</th></tr></thead>
@@ -858,4 +858,38 @@ async function handlePrintRapor(santriId, semester) {
 }
 
 // ---------------- INIT ----------------
-document.addEventListener('DOMContentLoaded', render);
+// ---------------- EVENT DELEGATION ----------------
+// Satu listener terpusat di #app, bukan onclick= inline per elemen.
+// Alasan: (1) CSP tanpa 'unsafe-inline' jadi mungkin, (2) skala lebih baik
+// begitu modul Admission/Graduation menambah banyak elemen interaktif,
+// (3) satu titik untuk trace semua aksi UI saat debugging.
+// Setiap elemen aksi diberi `data-action="namaFungsi"` + data-* untuk
+// argumennya; map di bawah menerjemahkan itu ke pemanggilan fungsi asli
+// tanpa mengubah signature fungsi-fungsi tersebut.
+const ACTION_HANDLERS = {
+  fillLogin: (el) => fillLogin(el.dataset.email, el.dataset.password),
+  handleLogout: () => handleLogout(),
+  goTo: (el) => goTo(el.dataset.view),
+  openSantri: (el) => openSantri(el.dataset.santriId),
+  setTab: (el) => setTab(el.dataset.tab),
+  handlePrintRapor: (el) => handlePrintRapor(el.dataset.santriId, el.dataset.semester),
+};
+
+function initEventDelegation() {
+  document.getElementById('app').addEventListener('click', (e) => {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const handler = ACTION_HANDLERS[el.dataset.action];
+    if (!handler) {
+      console.warn(`SISAF: tidak ada handler terdaftar untuk data-action="${el.dataset.action}"`);
+      return;
+    }
+    e.preventDefault();
+    handler(el);
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initEventDelegation();
+  render();
+});

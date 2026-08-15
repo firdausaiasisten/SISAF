@@ -68,12 +68,11 @@ async function run() {
 
     // navigate to daftar santri, then open first santri, then click through tabs
     await window.goTo('daftar');
-    const santriLinks = window.document.querySelectorAll('#main-content a[onclick^="openSantri"]');
+    const santriLinks = window.document.querySelectorAll('#main-content a[data-action="openSantri"]');
     results.push(`  daftar santri rows: ${santriLinks.length}`);
 
     if (santriLinks.length > 0) {
-      const match = santriLinks[0].getAttribute('onclick').match(/openSantri\('([^']+)'\)/);
-      const santriId = match[1];
+      const santriId = santriLinks[0].dataset.santriId;
       await window.openSantri(santriId);
 
       for (const tab of ['akademik', 'keuangan', 'kedisiplinan', 'kesehatan', 'dokumen', 'notifikasi', 'status']) {
@@ -98,13 +97,13 @@ async function run() {
 
         // Rapor print test
         await window.setTab('akademik');
-        const printBtn = window.document.querySelector('#main-content button[onclick^="handlePrintRapor"]');
+        const printBtn = window.document.querySelector('#main-content button[data-action="handlePrintRapor"]');
         results.push(`  rapor print button present: ${printBtn ? 'YES' : 'MISSING'}`);
         if (printBtn) {
-          const m = printBtn.getAttribute('onclick').match(/handlePrintRapor\('([^']+)',\s*'([^']+)'\)/);
-          await window.handlePrintRapor(m[1], m[2]);
+          const { santriId: raporSantriId, semester: raporSemester } = printBtn.dataset;
+          await window.handlePrintRapor(raporSantriId, raporSemester);
           const raporEl = window.document.getElementById('print-rapor');
-          const openedSantri = await window.dataService.getSantriById(m[1], window.state.user);
+          const openedSantri = await window.dataService.getSantriById(raporSantriId, window.state.user);
           const hasSantriName = raporEl.textContent.includes(openedSantri.nama);
           const inst = await window.dataService.getInstitutionSettings();
           const hasKop = raporEl.textContent.includes(inst.nama.toUpperCase());
