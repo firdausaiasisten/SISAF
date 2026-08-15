@@ -27,7 +27,10 @@ dataService.js            memilih implementasi aktif berdasar config
 app.js                     state, routing, render semua halaman
 dom_verify.js              test integrasi (jsdom) — login semua role + tab
 migrations/
-  schema_sisaf_01_init.sql  skema lengkap, BELUM DIJALANKAN
+  schema_sisaf_01_init.sql          skema lengkap, BELUM DIJALANKAN
+  schema_sisaf_02_rls_policies.sql  RLS policy nyata, BELUM DIJALANKAN
+tests/
+  rls_test.sql               pgTAP — 26 assertion, per-role + anon
 ```
 
 ## Akun demo (mode mock)
@@ -191,15 +194,132 @@ dengan RLS + policy saat migrasi Supabase, bukan diperbaiki di mock.
 
 ## Tech debt yang disadari dari awal (bukan ditemukan belakangan)
 
-- **Inline `onclick=` di HTML string** (`app.js`) — pola yang sama dipakai
-  di HRIS `dataku2026`, dan di sana sudah tercatat sebagai tech debt
-  (butuh CSP `unsafe-inline`). Direplikasi di sini untuk konsistensi
-  arsitektur sesuai permintaan, bukan diperkenalkan tanpa sadar — refactor
-  ke `addEventListener` + event delegation sebaiknya dilakukan bersamaan
-  dengan refactor HRIS, bukan terpisah.
+- ~~**Inline `onclick=` di HTML string**~~ — **sudah diperbaiki.** Semua
+  8 titik `onclick=` di `app.js` sudah direfactor ke `data-action` +
+  satu delegated listener di `#app` (lihat `ACTION_HANDLERS` di akhir
+  `app.js`). CSP tanpa `unsafe-inline` sekarang memungkinkan. `dom_verify.js`
+  sudah disesuaikan mengikuti selector baru. **Aturan untuk kontributor
+  baru: jangan tambah `onclick=` inline lagi** — tambah `data-action`
+  baru + satu entri di `ACTION_HANDLERS`.
 - **Sesi login tidak persisten** — state disimpan in-memory (bukan
   localStorage/cookie), hilang saat refresh. Perlu diputuskan sebelum
   produksi: Supabase Auth session (setelah migrasi) akan menangani ini
   secara native.
 - **Password mock plaintext** di `mockDataService.js` — aman karena hanya
   data contoh in-memory, tapi jangan pernah dijadikan pola untuk data asli.
+
+## Rencana Pengembangan Selanjutnya & Pembagian Peran Tim
+
+Bagian ini untuk tim yang mengembangkan SISAF bersama-sama. Tujuannya
+dua: (1) urutan kerja yang jelas supaya tidak ada yang membangun di atas
+fondasi yang belum siap, dan (2) **pembagian file/modul per orang supaya
+tidak ada dua orang mengedit file yang sama secara bersamaan** — ini
+penyebab paling umum "code malfunction" di proyek kecil: bukan karena
+kodenya salah, tapi karena dua perubahan saling menimpa tanpa sadar.
+
+### Aturan kerja sama (wajib dibaca sebelum mulai)
+
+1. **Satu file/modul = satu penanggung jawab per fase.** Kalau perlu
+   menyentuh file yang bukan tanggung jawabmu, koordinasi dulu di grup
+   tim, jangan langsung commit.
+2. **Selalu lewat `dataService.js`, jangan pernah panggil
+   `mockDataService`/`supabaseDataService` langsung dari `app.js`.**
+   Ini sudah pernah jadi bug nyata di proyek ini (lihat bagian "Perbaikan
+   bug" di atas) — sekali lagi terjadi berarti fitur diam-diam pakai data
+   mock walau `APP_MODE` sudah `'supabase'`.
+3. **Signature fungsi di `mockDataService.js` dan `supabaseDataService.js`
+   harus identik** (nama fungsi, urutan parameter, bentuk return). Kalau
+   menambah fungsi baru, tambahkan di **kedua** file sekaligus meski
+   `supabaseDataService` isinya masih TODO — supaya tidak ada yang lupa.
+4. **Jangan tambah `onclick=` inline baru** — pakai pola `data-action`
+   yang sudah ada (lihat bagian Tech debt di atas).
+5. **RLS dan otorisasi di `app.js` harus tetap sinkron.** Kalau menambah
+   izin tulis baru untuk suatu role, tambahkan juga policy-nya di
+   `migrations/schema_sisaf_02_rls_policies.sql` pada PR yang sama — jangan
+   dipisah ke PR lain, supaya tidak ada window waktu di mana keduanya
+   tidak sinkron.
+6. **Branch per fase/modul**, nama branch `fase-<n>-<modul>` (mis.
+   `fase-1-migrasi-supabase`), PR ke `main` setelah `dom_verify.js` (dan
+   `rls_test.sql` kalau relevan) lulus lokal.
+
+### Fase 1 — Fondasi Backend (blocking, kerjakan lebih dulu)
+
+Tidak ada fase lain yang boleh mulai sebelum fase ini selesai, karena
+semuanya bergantung pada backend nyata ada.
+
+| Tugas | File yang disentuh | Penanggung jawab |
+|---|---|---|
+| Buat project Supabase, jalankan `schema_sisaf_01_init.sql` lalu `schema_sisaf_02_rls_policies.sql` | `migrations/` | **Backend Lead** |
+| Jalankan `tests/rls_test.sql` (`supabase test db`) terhadap Postgres nyata, perbaiki policy yang gagal | `migrations/schema_sisaf_02_rls_policies.sql`, `tests/rls_test.sql` | **Backend Lead** |
+| Isi `supabaseDataService.js` — ganti setiap TODO dengan pemanggilan `supabase-js` nyata, signature harus tetap sama persis dengan `mockDataService.js` | `supabaseDataService.js` | **Backend Dev** |
+| Isi kredensial Supabase (URL, anon key), tambahkan `<script supabase-js>` | `config.js`, `index.html` | **Backend Lead** |
+| Migrasi sesi login ke Supabase Auth (`onAuthStateChange`, dsb.) | `app.js` (hanya bagian `handleLogin`/`handleLogout`/init sesi — koordinasi dengan siapa pun yang pegang Fase 2 di `app.js`) | **Backend Dev** |
+
+**Keluaran fase ini:** `CONFIG.APP_MODE = 'supabase'` bisa dinyalakan
+dan seluruh `dom_verify.js` tetap lulus tanpa mengubah UI.
+
+### Fase 2 — Kualitas & Keamanan Frontend (bisa paralel dengan Fase 1)
+
+Tidak bergantung pada backend, jadi bisa dikerjakan bersamaan oleh orang
+berbeda selama tidak menyentuh file yang sama di waktu yang sama.
+
+| Tugas | File yang disentuh | Penanggung jawab |
+|---|---|---|
+| Test otomatis untuk data layer: satu test suite yang dijalankan terhadap **mock maupun supabase** dengan assertion yang sama, memastikan kontrak signature terjaga | file baru `tests/data_service_contract.test.js` | **QA / Frontend Dev A** |
+| Setup error tracking (Sentry atau setara) — penting karena ini data pribadi santri | file baru, minimal invasif ke `app.js` | **Frontend Dev B** |
+| Review & rapikan CSS/komponen UI berulang jika ditemukan duplikasi | `styles.css` | **Frontend Dev B** |
+
+**Jangan mulai Fase 3 sebelum Fase 1 selesai** — modul Admission/Graduation
+butuh backend nyata untuk pipeline status yang lebih kompleks dari yang
+mock bisa simulasikan dengan baik (banyak state transisi, validasi
+dokumen, dsb.).
+
+### Fase 3 — Modul Admission & Graduation
+
+Enum `status_santri` dan kolom `admission_id`/`exit_date`/`exit_reason`
+di tabel `santri` sudah disiapkan (lihat bagian "Fondasi: Student Master"
+di atas) supaya fase ini tidak perlu `ALTER TABLE` terhadap data produksi.
+
+| Tugas | File yang disentuh | Penanggung jawab |
+|---|---|---|
+| Desain tabel `applicants` + alur `calon_santri` → `diterima` → `terdaftar` | migrasi baru `schema_sisaf_03_admission.sql` | **Backend Lead** |
+| UI form pendaftaran calon santri baru | `app.js` (fungsi render baru, **jangan edit fungsi render yang sudah ada** — tambah fungsi baru dan panggil dari router) | **Frontend Dev A** |
+| Alur Graduation clearance (syarat kelulusan, cek keuangan lunas, dst.) | `app.js` + fungsi baru di `dataService`/kedua implementasi | **Frontend Dev A + Backend Dev** (koordinasi) |
+| RLS untuk tabel `applicants` | `schema_sisaf_03_admission.sql` | **Backend Lead** |
+
+### Fase 4 — Notifikasi WhatsApp Nyata
+
+Baru dikerjakan setelah Fase 1 selesai — butuh Supabase Edge Function
+untuk menyimpan token API di server (lihat bagian "Notifikasi WhatsApp"
+di atas untuk alasan keamanannya).
+
+| Tugas | File yang disentuh | Penanggung jawab |
+|---|---|---|
+| Edge Function pengirim WA (WhatsApp Cloud API resmi) | project Supabase (Edge Functions), bukan file di repo ini | **Backend Lead** |
+| Trigger pengiriman dari `simulateSendNotifikasi` → panggilan nyata | `supabaseDataService.js` | **Backend Dev** |
+
+### Fase 5 — Multi-tenant SaaS (opsional, keputusan bisnis dulu)
+
+Jangan mulai tanpa keputusan eksplisit dari pemilik produk — ini
+perubahan besar ke RLS (per-tenant, bukan cuma per-role). `institution_settings`
+sudah disiapkan arahnya (lihat bagian terkait di atas).
+
+### Ringkasan pembagian peran (siapa pegang apa secara umum)
+
+- **Backend Lead** — migrasi SQL, RLS policy, keputusan skema, review PR
+  yang menyentuh `migrations/`.
+- **Backend Dev** — implementasi `supabaseDataService.js`, integrasi
+  Edge Function.
+- **Frontend Dev A** — modul baru di `app.js` (Admission/Graduation) —
+  selalu tambah fungsi baru, hindari mengedit fungsi render yang sudah
+  ada dan sedang dipakai modul lain.
+- **Frontend Dev B** — kualitas, error tracking, styling, refactor teknis
+  (bukan fitur baru) di `app.js`/`styles.css`.
+- **QA** — `dom_verify.js`, `rls_test.sql`, test kontrak data layer;
+  wajib jalan hijau sebelum PR di-merge, siapa pun pengarangnya.
+
+Kalau tim lebih kecil dari 5 orang, satu orang bisa pegang lebih dari
+satu peran — yang penting **satu orang tidak mengedit file yang sama
+dengan orang lain di waktu bersamaan tanpa koordinasi**, itu prinsip
+intinya, bukan jumlah orangnya.
+
