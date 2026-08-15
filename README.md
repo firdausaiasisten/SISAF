@@ -127,13 +127,47 @@ Yang sudah disiapkan agar migrasi tidak perlu desain ulang:
    nyata.
 
 ### Langkah migrasi saat project Supabase sudah dibuat
-1. Jalankan `migrations/schema_sisaf_01_init.sql`.
-2. Isi `CONFIG.SUPABASE_URL` dan `CONFIG.SUPABASE_ANON_KEY` di `config.js`.
-3. Tambahkan `<script src=".../supabase-js@2">` di `index.html`.
-4. Implementasikan setiap fungsi TODO di `supabaseDataService.js`.
-5. Uji RLS per-role secara manual terhadap Postgres nyata (jangan
-   ulangi tech debt HRIS: RLS yang tidak pernah diuji end-to-end).
-6. Ubah `CONFIG.APP_MODE` ke `'supabase'`. Tidak ada perubahan di `app.js`.
+1. Buat project Supabase, jalankan `migrations/schema_sisaf_01_init.sql`
+   lalu `migrations/schema_sisaf_02_rls_policies.sql`.
+2. Jalankan `tests/rls_test.sql` (`supabase test db`) — perbaiki policy
+   yang gagal sebelum lanjut.
+3. Isi `CONFIG.SUPABASE_URL` dan `CONFIG.SUPABASE_ANON_KEY` di `config.js`.
+   `index.html` sudah memuat `<script supabase-js@2>` dari CDN, tidak
+   perlu diedit lagi.
+4. Uji **setiap** fungsi `supabaseDataService.js` manual per role —
+   sudah diimplementasikan penuh (lihat status di bawah) tapi belum
+   pernah dieksekusi terhadap Postgres nyata.
+5. Ubah `CONFIG.APP_MODE` ke `'supabase'`. Tidak ada perubahan di `app.js`.
+
+### Status `supabaseDataService.js` — sudah ditulis, BELUM diuji nyata
+
+Semua 20 fungsi sudah diimplementasikan mengikuti pola `supabase-js`,
+dengan paritas signature terhadap `mockDataService.js` (diverifikasi
+otomatis: nama fungsi sama persis, tidak ada yang tertinggal di salah
+satu sisi). Beberapa catatan penting untuk siapa pun yang menguji/
+melanjutkan ini:
+
+- **`changeStudentStatus`** — insert riwayat status lalu update
+  `santri.status` masih **dua langkah terpisah**, bukan satu transaksi.
+  Kalau langkah kedua gagal setelah langkah pertama berhasil, data jadi
+  tidak konsisten (errornya sengaja dibuat jelas, bukan ditelan). Ini
+  **harus** dimigrasikan ke Postgres function (RPC) transactional
+  sebelum dipakai rutin di production.
+- **`login`** — request Supabase Auth dan `user_profiles` adalah dua
+  panggilan terpisah; kalau akun Auth ada tapi profilnya belum dibuat,
+  fungsi mengembalikan pesan error yang membedakan kasus ini dari
+  "password salah", supaya tidak salah didiagnosis.
+- **RLS sebagai source of truth di jalur Supabase** — berbeda dari
+  `mockDataService` (yang memfilter santri manual di JS karena tidak
+  ada RLS sama sekali), versi Supabase mengandalkan
+  `schema_sisaf_02_rls_policies.sql` untuk scope akses. Kalau RLS belum
+  diuji lulus (`tests/rls_test.sql`), JANGAN nyalakan `APP_MODE='supabase'`
+  di production — kebocoran data antar kelas/wali bisa terjadi diam-diam.
+- Sandbox pengembangan tidak bisa menjangkau `*.supabase.co`, jadi yang
+  sudah diverifikasi otomatis hanya: sintaks valid, paritas 20/20 fungsi
+  dengan mock, dan pesan error yang jelas saat client belum dikonfigurasi.
+  **Belum** diverifikasi: query benar-benar mengembalikan data yang benar
+  dari Postgres sungguhan.
 
 ### Rapor digital — cetak/simpan sebagai PDF
 
@@ -251,7 +285,7 @@ semuanya bergantung pada backend nyata ada.
 |---|---|---|
 | Buat project Supabase, jalankan `schema_sisaf_01_init.sql` lalu `schema_sisaf_02_rls_policies.sql` | `migrations/` | **Backend Lead** |
 | Jalankan `tests/rls_test.sql` (`supabase test db`) terhadap Postgres nyata, perbaiki policy yang gagal | `migrations/schema_sisaf_02_rls_policies.sql`, `tests/rls_test.sql` | **Backend Lead** |
-| Isi `supabaseDataService.js` — ganti setiap TODO dengan pemanggilan `supabase-js` nyata, signature harus tetap sama persis dengan `mockDataService.js` | `supabaseDataService.js` | **Backend Dev** |
+| Isi `supabaseDataService.js` — ganti setiap TODO dengan pemanggilan `supabase-js` nyata, signature harus tetap sama persis dengan `mockDataService.js` | `supabaseDataService.js` | **~~Backend Dev~~ Sudah ditulis, perlu diuji** — lihat bagian status di atas |
 | Isi kredensial Supabase (URL, anon key), tambahkan `<script supabase-js>` | `config.js`, `index.html` | **Backend Lead** |
 | Migrasi sesi login ke Supabase Auth (`onAuthStateChange`, dsb.) | `app.js` (hanya bagian `handleLogin`/`handleLogout`/init sesi — koordinasi dengan siapa pun yang pegang Fase 2 di `app.js`) | **Backend Dev** |
 

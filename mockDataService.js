@@ -154,6 +154,14 @@ const mockDataService = {
     return { user: safeUser, error: null };
   },
 
+  // Paritas signature dengan supabaseDataService.logout() (yang memanggil
+  // auth.signOut()). Di mock tidak ada sesi server untuk ditutup — no-op,
+  // tapi tetap ada supaya kalau app.js suatu saat memanggil dataService.logout()
+  // langsung, tidak error di mode mock.
+  async logout() {
+    await _delay();
+  },
+
   // ---------------- KELAS ----------------
   async getKelasList() {
     await _delay();

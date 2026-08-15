@@ -12,8 +12,11 @@
   <div id="app"><div class="empty-state">Memuat SISAF...</div></div>
   <div id="print-rapor"></div>
 
-  <!-- Urutan penting: config -> service implementations -> abstraksi -> app logic -->
+  <!-- Urutan penting: config -> supabase-js (untuk mode supabase) -> service implementations -> abstraksi -> app logic -->
   <script src="config.js"></script>
+  <!-- supabase-js dimuat selalu (ringan, dari CDN) supaya supabaseDataService.js siap
+       dipakai begitu CONFIG.APP_MODE diubah ke 'supabase' tanpa perlu edit index.html lagi -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="mockDataService.js"></script>
   <script src="supabaseDataService.js"></script>
   <script src="dataService.js"></script>
