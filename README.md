@@ -218,13 +218,12 @@ kalau SISAF benar-benar dikembangkan jadi SaaS multi-tenant, tabel
 pesantren mengelola profilnya sendiri lewat menu yang sama — tanpa
 menyentuh kode atau file konfigurasi.
 
-**Belum dibangun** (di luar scope permintaan saat ini, dicatat supaya
-tidak lupa): otorisasi `updateInstitutionSettings` masih divalidasi di
-`app.js` lewat pengecekan role sebelum tombol/menu ditampilkan, bukan di
-`mockDataService` itu sendiri — konsisten dengan prinsip HRIS, tapi
-berarti kalau ada jalur lain memanggil fungsi ini langsung (mis. dari
-console browser), tidak ada penghalang di level data. Ini perlu ditutup
-dengan RLS + policy saat migrasi Supabase, bukan diperbaiki di mock.
+**Sudah ditutup:** otorisasi `updateInstitutionSettings` sekarang
+divalidasi juga di `mockDataService`/`supabaseDataService` (parameter
+`currentUser`, cek terhadap `SETTINGS_MANAGER_ROLES`), bukan cuma di
+`app.js` lewat sembunyi tombol/menu. Konsisten dengan RLS
+`institution_settings_update_admin_only` yang sudah admin-only sejak
+awal di `schema_sisaf_02_rls_policies.sql`.
 
 ## Tech debt yang disadari dari awal (bukan ditemukan belakangan)
 
