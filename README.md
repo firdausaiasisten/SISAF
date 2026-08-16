@@ -300,7 +300,7 @@ berbeda selama tidak menyentuh file yang sama di waktu yang sama.
 | Tugas | File yang disentuh | Penanggung jawab |
 |---|---|---|
 | ~~Test otomatis untuk data layer~~ **Selesai** — `tests/data_service_contract.test.js`, jalankan dengan `node --test tests/data_service_contract.test.js`. 14 assertion lulus terhadap mock (paritas 20 fungsi, otorisasi role, riwayat status tidak ditimpa, dll). Suite terhadap supabase otomatis aktif begitu env var `SISAF_SUPABASE_URL` & `SISAF_SUPABASE_ANON_KEY` diisi (setelah project Supabase dibuat) — sampai saat itu di-skip, bukan gagal. | `tests/data_service_contract.test.js` | **QA / Frontend Dev A** |
-| Setup error tracking (Sentry atau setara) — penting karena ini data pribadi santri | file baru, minimal invasif ke `app.js` | **Frontend Dev B** |
+| ~~Setup error tracking~~ **Selesai** — `errorTracking.js` (self-hosted, tanpa Sentry/pihak ketiga karena data santri sensitif tidak boleh keluar). Menangkap `window.onerror` & `unhandledrejection` global, redaksi otomatis pola NIS/email dari pesan sebelum disimpan di `window.SISAF_ERRORS` (buffer memori, maks 50, tidak persisten). `window.SISAF_reportHandledError(context, err)` tersedia untuk dipanggil manual dari `catch` baru yang ditambahkan nanti. | `errorTracking.js`, `index.html` | **Frontend Dev B** |
 | Review & rapikan CSS/komponen UI berulang jika ditemukan duplikasi | `styles.css` | **Frontend Dev B** |
 
 **Jangan mulai Fase 3 sebelum Fase 1 selesai** — modul Admission/Graduation
