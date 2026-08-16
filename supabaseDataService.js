@@ -374,6 +374,134 @@ const supabaseDataService = {
     return data;
   },
 
+  // ---------------- ADMISSION (calon_santri -> diterima -> terdaftar) ----------------
+  async getApplicants(currentUser) {
+    if (!currentUser || !['admin', 'kepala_sekolah'].includes(currentUser.role)) return [];
+    const { data, error } = await _getClient()
+      .from('applicants')
+      .select('*')
+      .order('tanggal_daftar', { ascending: false });
+    _throwIfError(error, 'getApplicants');
+    return data;
+  },
+
+  async createApplicant(data, currentUser) {
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Hanya admin yang boleh mendaftarkan calon santri baru.');
+    }
+    const { data: entry, error } = await _getClient()
+      .from('applicants')
+      .insert({
+        nama: data.nama,
+        tanggal_lahir: data.tanggalLahir || null,
+        jenis_kelamin: data.jenisKelamin || null,
+        asal_sekolah: data.asalSekolah || null,
+        nama_wali: data.namaWali || null,
+        telepon_wali: data.teleponWali || null,
+        status: 'calon_santri',
+        tanggal_daftar: data.tanggalDaftar || new Date().toISOString().slice(0, 10),
+        catatan: data.catatan || null,
+      })
+      .select()
+      .single();
+    _throwIfError(error, 'createApplicant');
+    return entry;
+  },
+
+  // Sama seperti changeStudentStatus: BELUM satu transaksi Postgres.
+  // Saat status jadi 'terdaftar', tiga panggilan terpisah (fetch applicant,
+  // insert santri, insert riwayat, update applicant) -- migrasikan ke RPC
+  // transactional sebelum dipakai rutin di production, prioritas SAMA
+  // dengan changeStudentStatus karena pola risikonya identik (data
+  // admission bisa tidak konsisten kalau salah satu langkah gagal).
+  async updateApplicantStatus(applicantId, statusBaru, currentUser, extra = {}) {
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Hanya admin yang boleh mengubah status penerimaan.');
+    }
+    const client = _getClient();
+    const { data: applicant, error: fetchError } = await client
+      .from('applicants').select('*').eq('id', applicantId).single();
+    _throwIfError(fetchError, 'updateApplicantStatus (fetch applicant)');
+
+    const URUTAN = ['calon_santri', 'diterima', 'terdaftar'];
+    const idxSekarang = URUTAN.indexOf(applicant.status);
+    const idxBaru = URUTAN.indexOf(statusBaru);
+    if (idxBaru !== idxSekarang + 1) {
+      throw new Error(`Transisi status tidak valid: ${applicant.status} -> ${statusBaru}. Harus urut satu langkah.`);
+    }
+
+    if (statusBaru === 'terdaftar') {
+      if (!extra.nis || !extra.kelasId || !extra.waliSantriId) {
+        throw new Error('NIS, kelas, dan wali santri wajib diisi saat menerbitkan status "terdaftar".');
+      }
+      const { data: santriBaru, error: santriError } = await client
+        .from('santri')
+        .insert({
+          nis: extra.nis,
+          nama: applicant.nama,
+          kelas_id: extra.kelasId,
+          wali_santri_id: extra.waliSantriId,
+          angkatan: extra.angkatan || String(new Date().getFullYear()),
+          tanggal_lahir: applicant.tanggal_lahir,
+          jenis_kelamin: applicant.jenis_kelamin,
+          status: 'terdaftar',
+          admission_id: applicant.id,
+        })
+        .select().single();
+      _throwIfError(santriError, 'updateApplicantStatus (insert santri)');
+
+      const { error: histError } = await client.from('student_status_histories').insert({
+        santri_id: santriBaru.id,
+        status_sebelumnya: null,
+        status_baru: 'terdaftar',
+        tanggal_efektif: new Date().toISOString().slice(0, 10),
+        alasan: `Penerimaan santri baru (admission ${applicant.id})`,
+        disetujui_oleh: currentUser.nama || currentUser.email,
+      });
+      _throwIfError(histError, 'updateApplicantStatus (insert riwayat)');
+
+      const { data: updated, error: updateError } = await client
+        .from('applicants').update({ status: statusBaru, santri_id: santriBaru.id }).eq('id', applicantId)
+        .select().single();
+      _throwIfError(updateError, 'updateApplicantStatus (update applicant)');
+      return updated;
+    }
+
+    const { data: updated, error: updateError } = await client
+      .from('applicants').update({ status: statusBaru }).eq('id', applicantId)
+      .select().single();
+    _throwIfError(updateError, 'updateApplicantStatus');
+    return updated;
+  },
+
+  // ---------------- GRADUATION CLEARANCE ----------------
+  async checkGraduationEligibility(santriId) {
+    const { data, error } = await _getClient()
+      .from('keuangan_santri')
+      .select('id')
+      .eq('santri_id', santriId)
+      .neq('status', 'lunas');
+    _throwIfError(error, 'checkGraduationEligibility');
+    return {
+      eligible: data.length === 0,
+      alasanTidakEligible: data.length > 0 ? `${data.length} tagihan belum lunas.` : null,
+    };
+  },
+
+  async graduateSantri({ santriId, tanggalEfektif, disetujuiOleh }, currentUser) {
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Hanya admin yang boleh meluluskan santri.');
+    }
+    const cek = await this.checkGraduationEligibility(santriId);
+    if (!cek.eligible) {
+      throw new Error(`Belum bisa diluluskan: ${cek.alasanTidakEligible}`);
+    }
+    return this.changeStudentStatus({
+      santriId, statusBaru: 'lulus', tanggalEfektif,
+      alasan: 'Kelulusan', disetujuiOleh,
+    });
+  },
+
   // ---------------- HELPERS ----------------
   async getKelasById(kelasId) {
     if (!kelasId) return null;

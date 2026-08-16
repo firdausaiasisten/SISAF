@@ -83,6 +83,8 @@ const REQUIRED_FUNCTIONS = [
   'getNotifikasiBySantri', 'getNotifikasiSettings', 'updateNotifikasiSettings',
   'simulateSendNotifikasi',
   'getKelasById', 'getWaliSantriById',
+  'getApplicants', 'createApplicant', 'updateApplicantStatus',
+  'checkGraduationEligibility', 'graduateSantri',
 ];
 
 // Kredensial user contoh yang SELALU ada di seed mock (lihat mockDataService.js).
@@ -313,6 +315,95 @@ function runContractSuite(label, getImpl) {
     const impl = getImpl();
     assert.equal(await impl.getKelasById('tidak-ada'), null);
     assert.equal(await impl.getWaliSantriById('tidak-ada'), null);
+  });
+
+  test(`[${label}] getApplicants: admin & kepala_sekolah bisa lihat, wali_kelas tidak (deny by default)`, async () => {
+    const impl = getImpl();
+    const { user: admin } = await impl.login(KNOWN_USERS.admin.email, KNOWN_USERS.admin.password);
+    const { user: waliKelas } = await impl.login(KNOWN_USERS.waliKelas.email, KNOWN_USERS.waliKelas.password);
+    const asAdmin = await impl.getApplicants(admin);
+    const asWaliKelas = await impl.getApplicants(waliKelas);
+    assert.ok(Array.isArray(asAdmin) && asAdmin.length > 0, 'admin harus melihat minimal 1 applicant dari seed');
+    assert.ok(Array.isArray(asWaliKelas) && asWaliKelas.length === 0, 'wali_kelas TIDAK BOLEH melihat data admission (bukan role admin/kepala_sekolah)');
+  });
+
+  test(`[${label}] createApplicant menolak role selain admin, sukses untuk admin dengan status awal calon_santri`, async () => {
+    const impl = getImpl();
+    const { user: admin } = await impl.login(KNOWN_USERS.admin.email, KNOWN_USERS.admin.password);
+    const { user: waliKelas } = await impl.login(KNOWN_USERS.waliKelas.email, KNOWN_USERS.waliKelas.password);
+
+    await assert.rejects(
+      () => impl.createApplicant({ nama: 'Percobaan Tidak Sah' }, waliKelas),
+      /admin/i
+    );
+
+    const entry = await impl.createApplicant({ nama: '[TEST OTOMATIS] Calon Santri Uji' }, admin);
+    assert.equal(entry.status, 'calon_santri', 'applicant baru harus mulai dari status calon_santri, tidak bisa dibuat langsung diterima/terdaftar');
+    assert.equal(entry.santri_id, null, 'belum ada santri_id sebelum status terdaftar');
+  });
+
+  test(`[${label}] updateApplicantStatus menolak loncat status (calon_santri langsung ke terdaftar)`, async () => {
+    const impl = getImpl();
+    const { user: admin } = await impl.login(KNOWN_USERS.admin.email, KNOWN_USERS.admin.password);
+    const applicant = await impl.createApplicant({ nama: '[TEST OTOMATIS] Uji Loncat Status' }, admin);
+    await assert.rejects(
+      () => impl.updateApplicantStatus(applicant.id, 'terdaftar', admin, {}),
+      /urut|transisi/i,
+      'tidak boleh loncat dari calon_santri langsung ke terdaftar, harus lewat diterima dulu'
+    );
+  });
+
+  test(`[${label}] updateApplicantStatus ke 'terdaftar' membuat baris santri baru dengan admission_id terisi`, async () => {
+    const impl = getImpl();
+    const { user: admin } = await impl.login(KNOWN_USERS.admin.email, KNOWN_USERS.admin.password);
+    const kelasList = await impl.getKelasList();
+    const applicant = await impl.createApplicant({ nama: '[TEST OTOMATIS] Calon Santri Terdaftar' }, admin);
+
+    const diterima = await impl.updateApplicantStatus(applicant.id, 'diterima', admin, {});
+    assert.equal(diterima.status, 'diterima');
+
+    await assert.rejects(
+      () => impl.updateApplicantStatus(applicant.id, 'terdaftar', admin, {}),
+      /nis|kelas|wali/i,
+      'terdaftar wajib mengisi nis, kelasId, waliSantriId'
+    );
+
+    const terdaftar = await impl.updateApplicantStatus(applicant.id, 'terdaftar', admin, {
+      nis: 'TEST-' + Date.now(), kelasId: kelasList[0].id, waliSantriId: (await impl.getSantriList(admin))[0].wali_santri_id,
+    });
+    assert.ok(terdaftar.santri_id, 'applicant harus punya santri_id setelah status terdaftar');
+
+    const santriBaru = await impl.getSantriById(terdaftar.santri_id, admin);
+    assert.ok(santriBaru, 'baris santri baru harus bisa diambil lewat getSantriById');
+    assert.equal(santriBaru.admission_id, applicant.id, 'santri baru harus tertaut balik ke applicant asalnya');
+  });
+
+  test(`[${label}] checkGraduationEligibility: false kalau ada tagihan belum lunas, graduateSantri menolak jika belum eligible`, async () => {
+    const impl = getImpl();
+    const { user: admin } = await impl.login(KNOWN_USERS.admin.email, KNOWN_USERS.admin.password);
+    const semuaSantri = await impl.getSantriList(admin);
+    // s1 di seed mock punya 1 tagihan belum_lunas (SPP September) -- lihat mockDataService.js.
+    const santriDenganTagihan = semuaSantri.find(s => s.id === 's1') || semuaSantri[0];
+
+    const cek = await impl.checkGraduationEligibility(santriDenganTagihan.id);
+    assert.equal(typeof cek.eligible, 'boolean');
+
+    if (!cek.eligible) {
+      await assert.rejects(
+        () => impl.graduateSantri({ santriId: santriDenganTagihan.id, tanggalEfektif: '2026-08-16', disetujuiOleh: admin.id }, admin),
+        /lulus|lunas/i,
+        'graduateSantri tidak boleh meluluskan santri yang masih punya tagihan belum lunas'
+      );
+    }
+  });
+
+  test(`[${label}] graduateSantri menolak role selain admin`, async () => {
+    const impl = getImpl();
+    const { user: waliKelas } = await impl.login(KNOWN_USERS.waliKelas.email, KNOWN_USERS.waliKelas.password);
+    await assert.rejects(
+      () => impl.graduateSantri({ santriId: 's1', tanggalEfektif: '2026-08-16', disetujuiOleh: waliKelas.id }, waliKelas),
+      /admin/i
+    );
   });
 }
 

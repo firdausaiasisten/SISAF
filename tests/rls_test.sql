@@ -17,7 +17,7 @@
 -- ============================================================
 
 begin;
-select plan(26);
+select plan(33);
 
 -- ---------------- FIXTURE DATA ----------------
 -- Dua kelas, dua santri (satu per kelas), satu wali_santri per santri,
@@ -232,6 +232,52 @@ select throws_ok(
   '42501',
   null,
   'anon DILARANG update institution_settings'
+);
+
+-- ============================================================
+-- APPLICANTS (Admission, schema_sisaf_03) — admin & kepala_sekolah
+-- boleh baca, hanya admin boleh tulis.
+-- ============================================================
+insert into applicants (id, nama, status, tanggal_daftar) values
+  ('77777777-7777-7777-7777-777777777777', 'Calon Santri Test', 'calon_santri', current_date)
+on conflict do nothing;
+
+select test_login_as('a0000000-0000-0000-0000-000000000001'); -- admin
+select is(
+  (select count(*) from applicants)::int, 1,
+  'admin BISA membaca applicants'
+);
+select lives_ok(
+  $$ insert into applicants (nama, status, tanggal_daftar) values ('Test Insert Admin', 'calon_santri', current_date) $$,
+  'admin BISA insert applicants'
+);
+select lives_ok(
+  $$ update applicants set status = 'diterima' where id = '77777777-7777-7777-7777-777777777777' $$,
+  'admin BISA update status applicants'
+);
+
+select test_login_as('a0000000-0000-0000-0000-000000000002'); -- kepala_sekolah
+select is(
+  (select count(*) from applicants)::int, 2,
+  'kepala_sekolah BISA membaca applicants (read-only pantauan)'
+);
+select throws_ok(
+  $$ update applicants set status = 'terdaftar' where id = '77777777-7777-7777-7777-777777777777' $$,
+  '42501',
+  null,
+  'kepala_sekolah DILARANG update applicants'
+);
+select throws_ok(
+  $$ insert into applicants (nama, status, tanggal_daftar) values ('Test Insert Kepsek', 'calon_santri', current_date) $$,
+  '42501',
+  null,
+  'kepala_sekolah DILARANG insert applicants'
+);
+
+select test_login_as('a0000000-0000-0000-0000-000000000003'); -- wali_kelas
+select is(
+  (select count(*) from applicants)::int, 0,
+  'wali_kelas melihat 0 baris applicants (RLS select memfilter diam-diam, bukan error -- bukan admin/kepala_sekolah)'
 );
 
 select * from finish();

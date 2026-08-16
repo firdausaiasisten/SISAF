@@ -149,11 +149,20 @@ const MockDB = (function () {
     { id: 'ps6', santri_id: 's2', tanggal: '2026-08-15', status: 'izin', keterangan: 'Pulang urusan keluarga', dicatat_oleh: 'u_walikelas1' },
   ];
 
+  // ---------------- SEED: APPLICANTS (Admission) ----------------
+  // status pakai subset status_santri: 'calon_santri' -> 'diterima' -> 'terdaftar'.
+  // Begitu 'terdaftar', satu baris santri baru dibuat otomatis (lihat
+  // updateApplicantStatus) dengan admission_id menunjuk ke baris ini.
+  const applicants = [
+    { id: 'ap1', nama: 'Zaid Ibrahim', tanggal_lahir: '2011-02-11', jenis_kelamin: 'L', asal_sekolah: 'MTsN 1 Banda Aceh', nama_wali: 'Bapak Hamzah', telepon_wali: '0813xxxxxxx1', status: 'calon_santri', tanggal_daftar: '2026-08-01', catatan: null, santri_id: null },
+    { id: 'ap2', nama: 'Aisyah Putri', tanggal_lahir: '2011-05-20', jenis_kelamin: 'P', asal_sekolah: 'MTs Al-Muslimun', nama_wali: 'Ibu Ainun', telepon_wali: '0813xxxxxxx2', status: 'diterima', tanggal_daftar: '2026-07-20', catatan: 'Lulus tes tulis & wawancara', santri_id: null },
+  ];
+
   return {
     kelas, waliSantri, santri, users, nilaiAkademik,
     keuanganSantri, kedisiplinan, kesehatanAsrama, dokumenSantri,
     notifikasiSettings, notifikasiLog, institutionSettings, statusHistory,
-    presensi,
+    presensi, applicants,
   };
 })();
 
@@ -378,6 +387,139 @@ const mockDataService = {
     };
     MockDB.notifikasiLog.push(entry);
     return entry;
+  },
+
+  // ---------------- ADMISSION (calon_santri -> diterima -> terdaftar) ----------------
+  // Baca: admin & kepala_sekolah (visibilitas lintas peran untuk pantauan
+  // penerimaan). Tulis: admin saja — sama pola dengan updateInstitutionSettings.
+  async getApplicants(currentUser) {
+    await _delay();
+    if (!currentUser || !['admin', 'kepala_sekolah'].includes(currentUser.role)) return [];
+    return MockDB.applicants.slice().sort((a, b) => new Date(b.tanggal_daftar) - new Date(a.tanggal_daftar));
+  },
+
+  async createApplicant(data, currentUser) {
+    await _delay();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Hanya admin yang boleh mendaftarkan calon santri baru.');
+    }
+    const entry = {
+      id: 'ap' + (MockDB.applicants.length + 1) + '_' + Date.now(),
+      nama: data.nama,
+      tanggal_lahir: data.tanggalLahir || null,
+      jenis_kelamin: data.jenisKelamin || null,
+      asal_sekolah: data.asalSekolah || null,
+      nama_wali: data.namaWali || null,
+      telepon_wali: data.teleponWali || null,
+      status: 'calon_santri',
+      tanggal_daftar: data.tanggalDaftar || new Date().toISOString().slice(0, 10),
+      catatan: data.catatan || null,
+      santri_id: null,
+    };
+    MockDB.applicants.push(entry);
+    return entry;
+  },
+
+  // Transisi status HANYA maju satu langkah (calon_santri -> diterima ->
+  // terdaftar), tidak boleh loncat atau mundur -- mencegah data admission
+  // tidak konsisten (mis. 'terdaftar' tanpa pernah 'diterima').
+  // Begitu status jadi 'terdaftar', otomatis membuat satu baris santri
+  // baru (kelas_id & wali_santri_id wajib diisi di titik ini, karena baru
+  // di titik inilah calon santri benar-benar jadi santri terdaftar).
+  async updateApplicantStatus(applicantId, statusBaru, currentUser, extra = {}) {
+    await _delay(200);
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Hanya admin yang boleh mengubah status penerimaan.');
+    }
+    const applicant = MockDB.applicants.find(a => a.id === applicantId);
+    if (!applicant) throw new Error('Data calon santri tidak ditemukan.');
+
+    const URUTAN = ['calon_santri', 'diterima', 'terdaftar'];
+    const idxSekarang = URUTAN.indexOf(applicant.status);
+    const idxBaru = URUTAN.indexOf(statusBaru);
+    if (idxBaru !== idxSekarang + 1) {
+      throw new Error(`Transisi status tidak valid: ${applicant.status} -> ${statusBaru}. Harus urut satu langkah.`);
+    }
+
+    // PENTING: validasi field wajib SEBELUM mutasi applicant.status.
+    // Bug sebelumnya: applicant.status di-set duluan, baru dicek field
+    // wajib untuk 'terdaftar' -- kalau field kurang, error dilempar TAPI
+    // applicant.status sudah kadung berubah jadi 'terdaftar' tanpa baris
+    // santri yang menyertainya. Percobaan berikutnya lalu gagal dengan
+    // pesan "terdaftar -> terdaftar" yang membingungkan, dan data
+    // applicant tersangkut permanen di status yang tidak valid. Ketahuan
+    // dari tests/data_service_contract.test.js, bukan dari review manual.
+    if (statusBaru === 'terdaftar' && (!extra.nis || !extra.kelasId || !extra.waliSantriId)) {
+      throw new Error('NIS, kelas, dan wali santri wajib diisi saat menerbitkan status "terdaftar".');
+    }
+
+    applicant.status = statusBaru;
+
+    if (statusBaru === 'terdaftar') {
+      const santriBaru = {
+        id: 's' + (MockDB.santri.length + 1) + '_' + Date.now(),
+        nis: extra.nis,
+        nama: applicant.nama,
+        kelas_id: extra.kelasId,
+        wali_santri_id: extra.waliSantriId,
+        angkatan: extra.angkatan || String(new Date().getFullYear()),
+        tanggal_lahir: applicant.tanggal_lahir,
+        jenis_kelamin: applicant.jenis_kelamin,
+        status: 'terdaftar',
+        foto_url: null,
+        admission_id: applicant.id,
+        exit_date: null,
+        exit_reason: null,
+      };
+      MockDB.santri.push(santriBaru);
+      MockDB.statusHistory.push({
+        id: 'sh' + (MockDB.statusHistory.length + 1) + '_' + Date.now(),
+        santri_id: santriBaru.id,
+        status_sebelumnya: null,
+        status_baru: 'terdaftar',
+        tanggal_efektif: new Date().toISOString().slice(0, 10),
+        alasan: `Penerimaan santri baru (admission ${applicant.id})`,
+        dokumen_rujukan: null,
+        disetujui_oleh: currentUser.nama || currentUser.email,
+      });
+      applicant.santri_id = santriBaru.id;
+    }
+    return applicant;
+  },
+
+  // ---------------- GRADUATION CLEARANCE ----------------
+  // Syarat kelulusan sekarang cuma cek keuangan lunas (satu-satunya data
+  // yang tersedia untuk itu di modul ini). Kalau nanti ada syarat lain
+  // (dokumen lengkap, dst.), tambahkan pengecekan di sini, bukan di app.js,
+  // supaya satu sumber kebenaran untuk "boleh lulus atau tidak".
+  async checkGraduationEligibility(santriId) {
+    await _delay();
+    const tagihanBelumLunas = MockDB.keuanganSantri.filter(
+      k => k.santri_id === santriId && k.status !== 'lunas'
+    );
+    return {
+      eligible: tagihanBelumLunas.length === 0,
+      alasanTidakEligible: tagihanBelumLunas.length > 0
+        ? `${tagihanBelumLunas.length} tagihan belum lunas.`
+        : null,
+    };
+  },
+
+  // Membungkus changeStudentStatus dengan pengecekan eligibility supaya
+  // UI tidak perlu mengulang logikanya, dan supaya "lulus tanpa cek
+  // keuangan" tidak bisa terjadi lewat jalur lain yang lupa mengecek.
+  async graduateSantri({ santriId, tanggalEfektif, disetujuiOleh }, currentUser) {
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Hanya admin yang boleh meluluskan santri.');
+    }
+    const cek = await this.checkGraduationEligibility(santriId);
+    if (!cek.eligible) {
+      throw new Error(`Belum bisa diluluskan: ${cek.alasanTidakEligible}`);
+    }
+    return this.changeStudentStatus({
+      santriId, statusBaru: 'lulus', tanggalEfektif,
+      alasan: 'Kelulusan', disetujuiOleh,
+    });
   },
 
   // ---------------- HELPERS UNTUK NAMA KELAS/WALI ----------------
