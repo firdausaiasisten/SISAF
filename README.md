@@ -85,9 +85,27 @@ prototipe satu-pesantren:
 
 ## Modul
 
-Akademik · Keuangan Santri · Kedisiplinan · Kesehatan & Asrama · Dokumen ·
-**Notifikasi (simulasi)** — diakses lewat tab horizontal di halaman detail
-santri (pola sama seperti mockup awal `sisaf-riwayat-akademik-santri.html`).
+Akademik · **Presensi** · Keuangan Santri · Kedisiplinan · Kesehatan & Asrama ·
+Dokumen · **Notifikasi (simulasi)** — diakses lewat tab horizontal di halaman
+detail santri (pola sama seperti mockup awal
+`sisaf-riwayat-akademik-santri.html`).
+
+### Presensi Harian Santri
+
+Tab riwayat presensi per santri (read-only, di halaman detail) + layar
+"Input Presensi" terpisah di nav utama (`admin`, `wali_kelas`) untuk input
+massal satu kelas/satu tanggal sekaligus. `wali_kelas` terkunci ke kelasnya
+sendiri baik di UI maupun di RLS (`presensi_write_admin_or_own_class`) —
+beda dari modul lain (nilai/kedisiplinan/kesehatan/dokumen) yang masih
+admin-only di layer tulis karena memang belum ada form-nya; presensi punya
+form nyata jadi policy-nya sengaja lebih terbuka, disesuaikan dengan
+cakupan role di data layer (`getPresensiByKelasTanggal` di
+`mockDataService.js`/`supabaseDataService.js`).
+
+Status: seed mock + 3 fungsi data layer + tab + form input + RLS + migrasi
+sudah ditulis lengkap. Migrasi & RLS presensi **belum dieksekusi ke Postgres
+nyata**, sama seperti modul-modul Supabase lain — lihat "Status migrasi
+Supabase" di bawah.
 
 ### Notifikasi WhatsApp — status: SIMULASI, belum kirim sungguhan
 
@@ -242,6 +260,16 @@ awal di `schema_sisaf_02_rls_policies.sql`.
   migrasi backend.
 - **Password mock plaintext** di `mockDataService.js` — aman karena hanya
   data contoh in-memory, tapi jangan pernah dijadikan pola untuk data asli.
+- **BUG DITEMUKAN (belum diperbaiki):** `const SETTINGS_MANAGER_ROLES`
+  dideklarasikan di DUA file (`app.js` baris 39 dan `mockDataService.js`
+  baris 165) — masing-masing scope module aman di browser (tag `<script>`
+  terpisah), TAPI `dom_verify.js` meng-eval semua file ke satu scope global
+  yang sama sehingga `SyntaxError: Identifier 'SETTINGS_MANAGER_ROLES' has
+  already been declared` dan verifikasi DOM gagal total. Sudah ada sejak
+  commit awal (`24c8432`)/README menyebutnya duplikasi sengaja untuk
+  otorisasi dua lapis — niatnya benar, tapi nama variabel harus dibedakan
+  atau salah satu di-namespace (mis. `MockDB.SETTINGS_MANAGER_ROLES`).
+  **Perbaikan disarankan sebelum PR berikutnya yang menyentuh `dom_verify.js`.**
 
 ## Riset Komparatif & Rekomendasi Fitur Tambahan
 

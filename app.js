@@ -31,6 +31,7 @@ const ROLE_LABEL = {
 const NAV_ITEMS = [
   { key: 'ringkasan', label: 'Ringkasan' },
   { key: 'daftar', label: 'Daftar Santri' },
+  { key: 'presensi_input', label: 'Input Presensi', roles: ['admin', 'wali_kelas'] },
   { key: 'pengaturan', label: 'Pengaturan Institusi', roles: ['admin'] },
 ];
 
@@ -195,6 +196,9 @@ async function render() {
   if (state.view === 'pengaturan' && !SETTINGS_MANAGER_ROLES.includes(state.user.role)) {
     state.view = 'ringkasan';
   }
+  if (state.view === 'presensi_input' && !['admin', 'wali_kelas'].includes(state.user.role)) {
+    state.view = 'ringkasan';
+  }
   await renderAppShell();
 }
 
@@ -278,6 +282,8 @@ async function renderAppShell() {
     main.innerHTML = await renderDetailSantri(state.selectedSantriId);
   } else if (state.view === 'pengaturan') {
     main.innerHTML = await renderPengaturan();
+  } else if (state.view === 'presensi_input') {
+    main.innerHTML = await renderPresensiInput();
   }
 }
 
@@ -406,6 +412,120 @@ async function handleSaveInstitution(event) {
     // otorisasi di data layer yang menahan, bukan cuma UI.
     if (window.SISAF_reportHandledError) window.SISAF_reportHandledError('handleSaveInstitution', err);
     state.settingsError = err.message || 'Gagal menyimpan pengaturan institusi.';
+    await render();
+  }
+}
+
+// ---------------- VIEW: INPUT PRESENSI (wali_kelas & admin) ----------------
+// wali_kelas hanya melihat kelasnya sendiri (kelas_id terkunci dari
+// currentUser); admin boleh pilih kelas mana saja. Satu form menyimpan
+// seluruh baris kelas untuk satu tanggal sekaligus (bukan per-santri),
+// supaya input harian tidak perlu N kali submit.
+async function renderPresensiInput() {
+  const semuaKelas = await dataService.getKelasList();
+  const kelasTerkunci = state.user.role === 'wali_kelas';
+  const kelasOptions = kelasTerkunci
+    ? semuaKelas.filter(k => k.id === state.user.kelas_id)
+    : semuaKelas;
+
+  if (!state.presensiKelasId && kelasOptions.length > 0) {
+    state.presensiKelasId = kelasOptions[0].id;
+  }
+  if (!state.presensiTanggal) {
+    state.presensiTanggal = new Date().toISOString().slice(0, 10);
+  }
+
+  const daftar = state.presensiKelasId
+    ? await dataService.getPresensiByKelasTanggal(state.presensiKelasId, state.presensiTanggal)
+    : [];
+
+  const kelasSelectHtml = kelasTerkunci
+    ? `<input type="text" value="${escapeAttr(kelasOptions[0] ? kelasOptions[0].nama : '-')}" disabled style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);">`
+    : `<select id="presensi-kelas" onchange="handlePresensiFilterChange()" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;">
+        ${kelasOptions.map(k => `<option value="${k.id}" ${k.id === state.presensiKelasId ? 'selected' : ''}>${k.nama}</option>`).join('')}
+      </select>`;
+
+  const statusOpts = [
+    ['hadir', 'Hadir'], ['sakit', 'Sakit'], ['izin', 'Izin'], ['alpa', 'Alpa'],
+  ];
+
+  const rows = daftar.map(d => `
+    <tr>
+      <td>${d.nis}</td>
+      <td>${d.nama}</td>
+      <td>
+        <select id="presensi-status-${d.santri_id}" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;">
+          ${statusOpts.map(([v, l]) => `<option value="${v}" ${d.status === v ? 'selected' : ''}>${l}</option>`).join('')}
+        </select>
+      </td>
+      <td><input type="text" id="presensi-ket-${d.santri_id}" value="${escapeAttr(d.keterangan || '')}" placeholder="Keterangan (opsional)" style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;"></td>
+    </tr>
+  `).join('');
+
+  return `
+    <h1 class="page-title">Input Presensi Harian</h1>
+    <p class="page-sub">Pilih kelas dan tanggal, isi status setiap santri, lalu simpan sekali untuk seluruh kelas.</p>
+    <div class="panel" style="max-width:720px;">
+      <div style="display:flex;gap:16px;margin-bottom:16px;">
+        <div class="field" style="flex:1;">
+          <label>Kelas</label>
+          ${kelasSelectHtml}
+        </div>
+        <div class="field" style="flex:1;">
+          <label for="presensi-tanggal">Tanggal</label>
+          <input id="presensi-tanggal" type="date" value="${state.presensiTanggal}" onchange="handlePresensiFilterChange()" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;">
+        </div>
+      </div>
+      ${daftar.length === 0
+        ? `<div class="empty-state">Tidak ada santri aktif di kelas ini.</div>`
+        : `
+        <form onsubmit="handleSavePresensi(event)">
+          <table>
+            <thead><tr><th>NIS</th><th>Nama</th><th>Status</th><th>Keterangan</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <button class="btn-primary" type="submit" style="width:auto;padding:9px 18px;margin-top:14px;">Simpan Presensi</button>
+          ${state.presensiSaved ? `<span style="margin-left:12px;color:var(--ok);font-size:12.5px;font-weight:600;">Tersimpan.</span>` : ''}
+          ${state.presensiError ? `<div class="login-error" style="margin-top:12px;margin-bottom:0;">${state.presensiError}</div>` : ''}
+        </form>
+      `}
+    </div>
+  `;
+}
+
+function handlePresensiFilterChange() {
+  const kelasEl = document.getElementById('presensi-kelas');
+  if (kelasEl) state.presensiKelasId = kelasEl.value;
+  const tanggalEl = document.getElementById('presensi-tanggal');
+  if (tanggalEl) state.presensiTanggal = tanggalEl.value;
+  render();
+}
+
+async function handleSavePresensi(event) {
+  event.preventDefault();
+  const daftar = await dataService.getPresensiByKelasTanggal(state.presensiKelasId, state.presensiTanggal);
+  state.presensiError = null;
+  try {
+    // Berurutan (bukan Promise.all) sengaja — kalau salah satu gagal
+    // (mis. otorisasi RLS di Supabase nanti), sisanya tetap tersimpan
+    // dan errornya jelas menunjuk baris terakhir yang belum sempat masuk.
+    for (const d of daftar) {
+      const statusEl = document.getElementById(`presensi-status-${d.santri_id}`);
+      const ketEl = document.getElementById(`presensi-ket-${d.santri_id}`);
+      await dataService.recordPresensi({
+        santriId: d.santri_id,
+        tanggal: state.presensiTanggal,
+        status: statusEl.value,
+        keterangan: ketEl.value.trim() || null,
+        dicatatOleh: state.user.id,
+      });
+    }
+    state.presensiSaved = true;
+    await render();
+    state.presensiSaved = false;
+  } catch (err) {
+    if (window.SISAF_reportHandledError) window.SISAF_reportHandledError('handleSavePresensi', err);
+    state.presensiError = err.message || 'Gagal menyimpan presensi.';
     await render();
   }
 }
