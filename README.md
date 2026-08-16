@@ -243,7 +243,87 @@ awal di `schema_sisaf_02_rls_policies.sql`.
 - **Password mock plaintext** di `mockDataService.js` — aman karena hanya
   data contoh in-memory, tapi jangan pernah dijadikan pola untuk data asli.
 
-## Rencana Pengembangan Selanjutnya & Pembagian Peran Tim
+## Riset Komparatif & Rekomendasi Fitur Tambahan
+
+Bagian ini hasil riset terhadap aplikasi sejenis di GitHub (sistem
+informasi pesantren dan SIS umum) per 16 Agustus 2026, untuk melihat
+fitur apa yang lazim ada tapi belum tercakup di roadmap 5 fase SISAF
+saat ini. **Ini rekomendasi, bukan komitmen** — keputusan mengadopsi
+tetap di tangan tim/pemilik produk, dan sebagian besar butuh diskusi
+skop dulu sebelum masuk fase manapun.
+
+Repo yang dijadikan pembanding: `mharisudn/santri` (SIM Kesantrian),
+`dibaliqaja/pesantren-cms`, `AhmadMuzayyin/digitren`,
+`dnzykreatif-dev/Santri-Analytics` (hafalan & absensi berbasis Google
+Sheets), `nurd0tid/SiPONPES`, serta pola umum di topik GitHub
+`student-information-system` / `school-management` (mis. openSIS,
+EduCore).
+
+### Prioritas tinggi — celah nyata dibanding aplikasi sejenis
+
+1. **Presensi harian santri** (bukan cuma catatan kedisiplinan
+   insidental). Hampir semua pembanding punya ini sebagai modul
+   terpisah dari "pelanggaran". Cocok jadi tabel baru
+   (`presensi_harian`) + tab baru di halaman detail santri, mengikuti
+   pola tab yang sudah ada (`TABS` di `app.js`). Tidak butuh Supabase
+   untuk mulai — bisa dirancang & di-mock dulu seperti modul lain.
+2. **Buku kas / tabungan santri** (uang saku, bukan tagihan SPP).
+   Muncul di PesantrenCMS dan Digitren sebagai fitur inti, karena di
+   pesantren uang santri sering dititip-kelola pihak sekolah. Beda
+   dari `keuanganSantri` (tagihan) yang sudah ada — ini saldo & mutasi
+   dua arah (setor/tarik).
+3. **Log aktivitas / audit trail** (PesantrenCMS punya ini eksplisit).
+   SISAF sudah punya `changeStudentStatus` yang menyimpan riwayat, tapi
+   belum ada log umum untuk siapa-mengubah-apa-kapan di seluruh
+   aplikasi (mis. siapa mengubah pengaturan institusi, siapa
+   menambah nilai). Penting untuk akuntabilitas data pribadi santri —
+   sejalan dengan semangat `errorTracking.js` yang sudah dibuat, tinggal
+   diperluas jadi audit log, bukan cuma error log.
+
+### Prioritas sedang — relevan untuk konteks pesantren
+
+4. **Pelacakan hafalan Al-Qur'an per juz/surat.** Santri Analytics
+   menjadikan ini modul utama, bukan sekadar baris di nilai akademik
+   seperti sekarang (lihat seed `nilaiAkademik` yang menyamakan
+   "Tahfizh" dengan mata pelajaran biasa). Kalau institusi memang
+   fokus tahfizh, modul terpisah dengan progres per juz akan jauh
+   lebih berguna daripada nilai huruf A/B/C.
+5. **Perizinan pulang/keluar asrama** dengan alur approval (mirip
+   "Pulang Bulanan" di Santri Analytics). Bisa dibangun di atas pola
+   `changeStudentStatus` yang sudah ada — status `izin_pulang` dengan
+   tanggal kembali, bukan status permanen.
+6. **Portal santri sendiri**, bukan cuma wali santri. Saat ini role
+   `wali_santri` cuma untuk orang tua; kalau santri (terutama yang
+   lebih besar) juga perlu login sendiri melihat nilai/jadwalnya
+   sendiri, ini role baru yang perlu ditambah di `ROLE_LABEL` dan
+   matriks otorisasi.
+
+### Prioritas rendah / opsional — pertimbangkan tapi tidak mendesak
+
+7. **Jadwal pelajaran/kelas** — umum di SIS generik, tapi SISAF
+   fokusnya administrasi kesantrian, bukan akademik penuh; masuk akal
+   ditunda sampai ada permintaan eksplisit.
+8. **Manajemen inventaris/aset asrama** (muncul di EduCore) — relevan
+   kalau pesantren juga mau mengelola barang, tapi jauh dari
+   scope inti "data santri" saat ini.
+9. **Absensi biometrik/RFID/face-recognition** — pola umum di
+   pembanding SIS besar (openSIS, beberapa proyek attendance-system),
+   tapi ini investasi hardware, bukan sekadar fitur software; taruh di
+   backlog jangka panjang saja.
+
+### Yang SUDAH lebih baik di SISAF dibanding kebanyakan pembanding
+
+Untuk konteks — bukan berarti semua pembanding lebih unggul:
+- **Otorisasi berlapis** (UI + data layer + RLS) sudah eksplisit di
+  SISAF sejak awal; kebanyakan proyek serupa (termasuk yang di atas)
+  hanya mengandalkan cek di layer PHP/controller tanpa RLS database.
+- **Riwayat status tidak ditimpa** (`changeStudentStatus` selalu
+  menambah baris baru) — banyak pembanding memakai kolom `status`
+  tunggal yang ditimpa langsung, kehilangan histori.
+- **Test kontrak otomatis untuk data layer** — jarang ditemukan di
+  proyek PHP/Laravel sejenis pada riset ini.
+
+
 
 Bagian ini untuk tim yang mengembangkan SISAF bersama-sama. Tujuannya
 dua: (1) urutan kerja yang jelas supaya tidak ada yang membangun di atas
