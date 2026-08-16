@@ -144,6 +144,13 @@ const MockDB = (function () {
   };
 })();
 
+// Role yang boleh mengubah profil institusi (nama, alamat, kontak).
+// Duplikasi sengaja dari konstanta yang sama di app.js — app.js pakai
+// ini untuk sembunyikan menu/tombol (UX), data layer pakai ini untuk
+// menahan panggilan langsung (otorisasi sungguhan). Kalau daftar role
+// berubah, perbarui KEDUA tempat.
+const SETTINGS_MANAGER_ROLES = ['admin'];
+
 const mockDataService = {
   // ---------------- AUTH ----------------
   async login(email, password) {
@@ -254,10 +261,17 @@ const mockDataService = {
     return { ...MockDB.institutionSettings };
   },
 
-  // Otorisasi role (hanya admin) divalidasi di app.js sebelum memanggil ini,
-  // bukan di sini — konsisten dengan prinsip validasi eksplisit di layer JS.
-  async updateInstitutionSettings(newSettings) {
+  // Otorisasi role divalidasi DI SINI, bukan cuma di app.js — app.js
+  // menyembunyikan tombol/menu untuk role selain admin (UX), tapi kalau
+  // ada jalur lain memanggil fungsi ini langsung (mis. dari console
+  // browser), lapisan ini yang menahannya. Sama seperti prinsip
+  // _filterSantriByRole di atas: jangan andalkan UI saja sebagai
+  // satu-satunya penjaga otorisasi.
+  async updateInstitutionSettings(newSettings, currentUser) {
     await _delay();
+    if (!currentUser || !SETTINGS_MANAGER_ROLES.includes(currentUser.role)) {
+      throw new Error('Anda tidak memiliki izin untuk mengubah pengaturan institusi.');
+    }
     Object.assign(MockDB.institutionSettings, newSettings);
     return { ...MockDB.institutionSettings };
   },

@@ -223,11 +223,27 @@ function runContractSuite(label, getImpl) {
 
   test(`[${label}] getInstitutionSettings & updateInstitutionSettings konsisten (apa yang ditulis, itu yang dibaca kembali)`, async () => {
     const impl = getImpl();
+    const { user: admin } = await impl.login(KNOWN_USERS.admin.email, KNOWN_USERS.admin.password);
     const sebelum = await impl.getInstitutionSettings();
     assert.ok(sebelum && typeof sebelum === 'object');
 
-    const hasil = await impl.updateInstitutionSettings({ nama_institusi: sebelum.nama_institusi });
+    const hasil = await impl.updateInstitutionSettings({ nama_institusi: sebelum.nama_institusi }, admin);
     assert.equal(hasil.nama_institusi, sebelum.nama_institusi);
+  });
+
+  test(`[${label}] updateInstitutionSettings menolak role selain admin (otorisasi di data layer, bukan cuma UI)`, async () => {
+    const impl = getImpl();
+    const { user: waliKelas } = await impl.login(KNOWN_USERS.waliKelas.email, KNOWN_USERS.waliKelas.password);
+    await assert.rejects(
+      () => impl.updateInstitutionSettings({ nama: 'Percobaan tidak sah' }, waliKelas),
+      /izin/i,
+      'wali_kelas (dan role selain admin) TIDAK BOLEH bisa mengubah pengaturan institusi'
+    );
+  });
+
+  test(`[${label}] updateInstitutionSettings menolak panggilan tanpa currentUser (deny by default)`, async () => {
+    const impl = getImpl();
+    await assert.rejects(() => impl.updateInstitutionSettings({ nama: 'Percobaan tanpa login' }, null));
   });
 
   test(`[${label}] simulateSendNotifikasi mencatat entri dengan status terkirim_simulasi`, async () => {

@@ -378,6 +378,7 @@ async function renderPengaturan() {
         </div>
         <button class="btn-primary" type="submit" style="width:auto;padding:9px 18px;">Simpan Perubahan</button>
         ${state.settingsSaved ? `<span style="margin-left:12px;color:var(--ok);font-size:12.5px;font-weight:600;">Tersimpan.</span>` : ''}
+        ${state.settingsError ? `<div class="login-error" style="margin-top:12px;margin-bottom:0;">${state.settingsError}</div>` : ''}
       </form>
     </div>
   `;
@@ -392,10 +393,20 @@ async function handleSaveInstitution(event) {
   const nama = document.getElementById('inst-nama').value.trim();
   const alamat = document.getElementById('inst-alamat').value.trim();
   const kontak = document.getElementById('inst-kontak').value.trim();
-  state.institution = await dataService.updateInstitutionSettings({ nama, alamat, kontak });
-  state.settingsSaved = true;
-  await render();
-  state.settingsSaved = false;
+  state.settingsError = null;
+  try {
+    state.institution = await dataService.updateInstitutionSettings({ nama, alamat, kontak }, state.user);
+    state.settingsSaved = true;
+    await render();
+    state.settingsSaved = false;
+  } catch (err) {
+    // Bisa terjadi kalau ada jalur lain memanggil fungsi ini tanpa lewat
+    // menu (mis. dari console) dengan user yang bukan admin — lapisan
+    // otorisasi di data layer yang menahan, bukan cuma UI.
+    if (window.SISAF_reportHandledError) window.SISAF_reportHandledError('handleSaveInstitution', err);
+    state.settingsError = err.message || 'Gagal menyimpan pengaturan institusi.';
+    await render();
+  }
 }
 
 // ---------------- VIEW: DAFTAR SANTRI ----------------

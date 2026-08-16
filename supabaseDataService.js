@@ -41,6 +41,11 @@ function _throwIfError(error, context) {
   throw new Error(`${context}: ${error.message}`);
 }
 
+// Role yang boleh mengubah profil institusi — harus identik dengan
+// SETTINGS_MANAGER_ROLES di mockDataService.js dan app.js. Kalau daftar
+// role berubah, perbarui di KETIGA tempat.
+const SETTINGS_MANAGER_ROLES = ['admin'];
+
 const supabaseDataService = {
   // ---------------- AUTH ----------------
   // Return shape HARUS sama dengan mockDataService.login: { user, error }
@@ -236,7 +241,17 @@ const supabaseDataService = {
     return data || { nama: 'SISAF', alamat: '', kontak: '' };
   },
 
-  async updateInstitutionSettings(newSettings) {
+  // Otorisasi role divalidasi DI SINI juga (bukan cuma RLS di Postgres),
+  // sama seperti mockDataService — pertahanan berlapis. RLS di
+  // schema_sisaf_02_rls_policies.sql tetap jadi penjaga utama untuk
+  // panggilan yang lewat di luar app ini sama sekali (mis. langsung ke
+  // REST API Supabase), tapi cek eksplisit ini memberi pesan error yang
+  // jelas dalam bahasa Indonesia untuk pengguna app, bukan error Postgres
+  // mentah.
+  async updateInstitutionSettings(newSettings, currentUser) {
+    if (!currentUser || !SETTINGS_MANAGER_ROLES.includes(currentUser.role)) {
+      throw new Error('Anda tidak memiliki izin untuk mengubah pengaturan institusi.');
+    }
     const client = _getClient();
     const { data: existing } = await client.from('institution_settings').select('id').maybeSingle();
     const query = existing
