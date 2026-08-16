@@ -41,10 +41,14 @@ function _throwIfError(error, context) {
   throw new Error(`${context}: ${error.message}`);
 }
 
-// Role yang boleh mengubah profil institusi — harus identik dengan
-// SETTINGS_MANAGER_ROLES di mockDataService.js dan app.js. Kalau daftar
-// role berubah, perbarui di KETIGA tempat.
-const SETTINGS_MANAGER_ROLES = ['admin'];
+// Role yang boleh mengubah profil institusi — nilai harus identik dengan
+// SETTINGS_MANAGER_ROLES di mockDataService.js dan UI_SETTINGS_MANAGER_ROLES
+// di app.js. Nama sengaja beda per file (sebelumnya sama-sama
+// SETTINGS_MANAGER_ROLES di ketiga file, menyebabkan SyntaxError
+// "Identifier has already been declared" karena index.html memuat semua
+// <script> classic dalam satu scope global). Kalau daftar role berubah,
+// perbarui di KETIGA tempat.
+const SUPABASE_SETTINGS_MANAGER_ROLES = ['admin'];
 
 const supabaseDataService = {
   // ---------------- AUTH ----------------
@@ -309,7 +313,7 @@ const supabaseDataService = {
   // jelas dalam bahasa Indonesia untuk pengguna app, bukan error Postgres
   // mentah.
   async updateInstitutionSettings(newSettings, currentUser) {
-    if (!currentUser || !SETTINGS_MANAGER_ROLES.includes(currentUser.role)) {
+    if (!currentUser || !SUPABASE_SETTINGS_MANAGER_ROLES.includes(currentUser.role)) {
       throw new Error('Anda tidak memiliki izin untuk mengubah pengaturan institusi.');
     }
     const client = _getClient();

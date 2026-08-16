@@ -8,7 +8,13 @@ async function run() {
   const { window } = dom;
   window.print = () => {}; // jsdom does not implement print(); stub it for the print-rapor test
 
-  const files = ['config.js', 'mockDataService.js', 'supabaseDataService.js', 'dataService.js', 'app.js'];
+  // Daftar ini harus sinkron dengan urutan <script> di index.html.
+  // errorTracking.js dan sessionPersistence.js sebelumnya tertinggal saat
+  // ditambahkan ke index.html (commit fc31735, 0bdffa7) -- harness ini
+  // tidak diperbarui saat itu, jadi ReferenceError-nya baru ketahuan
+  // sekarang. supabase-js dari CDN sengaja tidak dimuat: APP_MODE=mock
+  // tidak pernah memanggil library itu.
+  const files = ['errorTracking.js', 'config.js', 'mockDataService.js', 'supabaseDataService.js', 'dataService.js', 'sessionPersistence.js', 'app.js'];
   const combined = files.map(f => fs.readFileSync(path.join(__dirname, f), 'utf8')).join('\n;\n');
   window.eval(combined);
 

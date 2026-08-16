@@ -36,7 +36,14 @@ const NAV_ITEMS = [
 ];
 
 // Role yang boleh mengubah profil institusi (nama, alamat, kontak).
-const SETTINGS_MANAGER_ROLES = ['admin'];
+// Dulu bernama SETTINGS_MANAGER_ROLES sama seperti di mockDataService.js/
+// supabaseDataService.js -- diganti nama karena semua <script> di index.html
+// dimuat classic (bukan type="module") sehingga berbagi satu scope global;
+// const dengan nama sama di lebih dari satu file menyebabkan SyntaxError
+// "Identifier has already been declared" saat halaman dimuat (bukan cuma
+// gagal di dom_verify.js -- ini benar-benar merusak app di browser nyata).
+// Nilai TETAP harus identik dengan data-layer di KEDUA tempat lain.
+const UI_SETTINGS_MANAGER_ROLES = ['admin'];
 
 const TABS = [
   { key: 'akademik', label: 'Akademik' },
@@ -193,7 +200,7 @@ async function render() {
   // Guard langsung di sini, bukan hanya menyembunyikan item nav — supaya
   // state.view tidak bisa "dipaksa" ke 'pengaturan' oleh peran yang tidak
   // berwenang lewat jalur lain selain klik nav.
-  if (state.view === 'pengaturan' && !SETTINGS_MANAGER_ROLES.includes(state.user.role)) {
+  if (state.view === 'pengaturan' && !UI_SETTINGS_MANAGER_ROLES.includes(state.user.role)) {
     state.view = 'ringkasan';
   }
   if (state.view === 'presensi_input' && !['admin', 'wali_kelas'].includes(state.user.role)) {
@@ -895,7 +902,7 @@ async function handleSimulateSend(event, santriId) {
 // ---------------- TAB: RIWAYAT STATUS (Student Master foundation) ----------------
 async function renderTabStatus(santri) {
   const history = await dataService.getStatusHistoryBySantri(santri.id);
-  const canManage = SETTINGS_MANAGER_ROLES.includes(state.user.role); // admin saja, sama seperti Pengaturan Institusi
+  const canManage = UI_SETTINGS_MANAGER_ROLES.includes(state.user.role); // admin saja, sama seperti Pengaturan Institusi
 
   const rows = history.map(h => `
     <tr>

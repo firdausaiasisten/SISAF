@@ -158,10 +158,13 @@ const MockDB = (function () {
 })();
 
 // Role yang boleh mengubah profil institusi (nama, alamat, kontak).
-// Duplikasi sengaja dari konstanta yang sama di app.js — app.js pakai
-// ini untuk sembunyikan menu/tombol (UX), data layer pakai ini untuk
-// menahan panggilan langsung (otorisasi sungguhan). Kalau daftar role
-// berubah, perbarui KEDUA tempat.
+// Duplikasi sengaja dari nilai yang sama di app.js (UI_SETTINGS_MANAGER_ROLES)
+// dan supabaseDataService.js (SUPABASE_SETTINGS_MANAGER_ROLES) — nama beda
+// per file supaya tidak bentrok di scope global classic <script>, tapi
+// NILAI harus tetap identik di ketiganya. app.js pakai untuk sembunyikan
+// menu/tombol (UX), data layer (file ini) pakai untuk menahan panggilan
+// langsung (otorisasi sungguhan). Kalau daftar role berubah, perbarui
+// KETIGA tempat.
 const SETTINGS_MANAGER_ROLES = ['admin'];
 
 const mockDataService = {
