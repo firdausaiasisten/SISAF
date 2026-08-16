@@ -301,7 +301,11 @@ berbeda selama tidak menyentuh file yang sama di waktu yang sama.
 |---|---|---|
 | ~~Test otomatis untuk data layer~~ **Selesai** — `tests/data_service_contract.test.js`, jalankan dengan `node --test tests/data_service_contract.test.js`. 14 assertion lulus terhadap mock (paritas 20 fungsi, otorisasi role, riwayat status tidak ditimpa, dll). Suite terhadap supabase otomatis aktif begitu env var `SISAF_SUPABASE_URL` & `SISAF_SUPABASE_ANON_KEY` diisi (setelah project Supabase dibuat) — sampai saat itu di-skip, bukan gagal. | `tests/data_service_contract.test.js` | **QA / Frontend Dev A** |
 | ~~Setup error tracking~~ **Selesai** — `errorTracking.js` (self-hosted, tanpa Sentry/pihak ketiga karena data santri sensitif tidak boleh keluar). Menangkap `window.onerror` & `unhandledrejection` global, redaksi otomatis pola NIS/email dari pesan sebelum disimpan di `window.SISAF_ERRORS` (buffer memori, maks 50, tidak persisten). `window.SISAF_reportHandledError(context, err)` tersedia untuk dipanggil manual dari `catch` baru yang ditambahkan nanti. | `errorTracking.js`, `index.html` | **Frontend Dev B** |
-| Review & rapikan CSS/komponen UI berulang jika ditemukan duplikasi | `styles.css` | **Frontend Dev B** |
+| ~~Review & rapikan CSS/komponen UI berulang~~ **Selesai** — pola "kartu permukaan" (background+border+shadow, dipakai di `.login-card`/`.stat-card`/`.panel`) dan gradien logo "mark" (`.login-brand .mark`/`.brand .mark`) digabung jadi selector bersama di `styles.css`. Nama class & tampilan tidak berubah — cek: `app.js` masih memakai class yang sama persis. | `styles.css` | **Frontend Dev B** |
+
+**Fase 2 selesai seluruhnya** (per commit yang menambahkan baris ini).
+Fase 1 (backend Supabase nyata) masih diblokir menunggu project Supabase
+dibuat — lihat bagian "Status blocker" di README.
 
 **Jangan mulai Fase 3 sebelum Fase 1 selesai** — modul Admission/Graduation
 butuh backend nyata untuk pipeline status yang lebih kompleks dari yang
