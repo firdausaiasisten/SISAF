@@ -235,10 +235,12 @@ dengan RLS + policy saat migrasi Supabase, bukan diperbaiki di mock.
   sudah disesuaikan mengikuti selector baru. **Aturan untuk kontributor
   baru: jangan tambah `onclick=` inline lagi** — tambah `data-action`
   baru + satu entri di `ACTION_HANDLERS`.
-- **Sesi login tidak persisten** — state disimpan in-memory (bukan
-  localStorage/cookie), hilang saat refresh. Perlu diputuskan sebelum
-  produksi: Supabase Auth session (setelah migrasi) akan menangani ini
-  secara native.
+- ~~**Sesi login tidak persisten**~~ — **sudah diperbaiki.** Sesi
+  disimpan di `sessionStorage` lewat `sessionPersistence.js` (bertahan
+  saat refresh, otomatis kosong saat tab ditutup — sengaja tidak pakai
+  `localStorage` supaya tidak jadi sesi permanen di perangkat bersama).
+  Akan digantikan oleh Supabase Auth session management native setelah
+  migrasi backend.
 - **Password mock plaintext** di `mockDataService.js` — aman karena hanya
   data contoh in-memory, tapi jangan pernah dijadikan pola untuk data asli.
 

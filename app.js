@@ -1,10 +1,13 @@
 // ============================================================
 // SISAF — app.js
-// Vanilla JS SPA. State disimpan in-memory (bukan localStorage —
-// artifact ini dirender di lingkungan yang tidak mendukung
-// browser storage), jadi sesi akan hilang saat refresh. Ini
-// perilaku yang diharapkan untuk demo/mock; saat migrasi ke
-// Supabase Auth, sesi akan ditangani oleh supabase-js.
+// Vanilla JS SPA. Sesi login disimpan di sessionStorage (bukan
+// localStorage) — bertahan saat refresh tapi hilang saat tab
+// ditutup, jadi tidak menjadi sesi permanen tanpa batas waktu.
+// Ini perbaikan atas tech debt "sesi login tidak persisten" yang
+// dicatat di README. Saat migrasi ke Supabase Auth nanti, mekanisme
+// ini digantikan oleh session management bawaan supabase-js
+// (lihat sessionStorage.js untuk detail & alasan tidak pakai
+// localStorage).
 // ============================================================
 
 const state = {
@@ -126,6 +129,7 @@ async function handleLogin(event) {
   }
   state.user = user;
   state.view = 'ringkasan';
+  sessionPersistence.save(user);
   await render();
 }
 
@@ -135,6 +139,8 @@ function fillLogin(email, password) {
 }
 
 async function handleLogout() {
+  await dataService.logout();
+  sessionPersistence.clear();
   state.user = null;
   state.view = 'ringkasan';
   state.selectedSantriId = null;
@@ -891,5 +897,10 @@ function initEventDelegation() {
 
 document.addEventListener('DOMContentLoaded', () => {
   initEventDelegation();
+  const restoredUser = sessionPersistence.restore();
+  if (restoredUser) {
+    state.user = restoredUser;
+    state.view = 'ringkasan';
+  }
   render();
 });
