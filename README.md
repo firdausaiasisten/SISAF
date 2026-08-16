@@ -299,7 +299,7 @@ berbeda selama tidak menyentuh file yang sama di waktu yang sama.
 
 | Tugas | File yang disentuh | Penanggung jawab |
 |---|---|---|
-| Test otomatis untuk data layer: satu test suite yang dijalankan terhadap **mock maupun supabase** dengan assertion yang sama, memastikan kontrak signature terjaga | file baru `tests/data_service_contract.test.js` | **QA / Frontend Dev A** |
+| ~~Test otomatis untuk data layer~~ **Selesai** — `tests/data_service_contract.test.js`, jalankan dengan `node --test tests/data_service_contract.test.js`. 14 assertion lulus terhadap mock (paritas 20 fungsi, otorisasi role, riwayat status tidak ditimpa, dll). Suite terhadap supabase otomatis aktif begitu env var `SISAF_SUPABASE_URL` & `SISAF_SUPABASE_ANON_KEY` diisi (setelah project Supabase dibuat) — sampai saat itu di-skip, bukan gagal. | `tests/data_service_contract.test.js` | **QA / Frontend Dev A** |
 | Setup error tracking (Sentry atau setara) — penting karena ini data pribadi santri | file baru, minimal invasif ke `app.js` | **Frontend Dev B** |
 | Review & rapikan CSS/komponen UI berulang jika ditemukan duplikasi | `styles.css` | **Frontend Dev B** |
 
