@@ -39,6 +39,7 @@ const SETTINGS_MANAGER_ROLES = ['admin'];
 
 const TABS = [
   { key: 'akademik', label: 'Akademik' },
+  { key: 'presensi', label: 'Presensi' },
   { key: 'keuangan', label: 'Keuangan Santri' },
   { key: 'kedisiplinan', label: 'Kedisiplinan' },
   { key: 'kesehatan', label: 'Kesehatan & Asrama' },
@@ -465,6 +466,7 @@ async function renderDetailSantri(santriId) {
 
   let tabContent = '';
   if (state.activeTab === 'akademik') tabContent = await renderTabAkademik(santri);
+  else if (state.activeTab === 'presensi') tabContent = await renderTabPresensi(santri);
   else if (state.activeTab === 'keuangan') tabContent = await renderTabKeuangan(santri);
   else if (state.activeTab === 'kedisiplinan') tabContent = await renderTabKedisiplinan(santri);
   else if (state.activeTab === 'kesehatan') tabContent = await renderTabKesehatan(santri);
@@ -529,6 +531,46 @@ async function renderTabAkademik(santri) {
       </div>
     `;
   }).join('');
+}
+
+// ---------------- TAB: PRESENSI ----------------
+async function renderTabPresensi(santri) {
+  const items = await dataService.getPresensiBySantri(santri.id);
+  if (items.length === 0) return `<div class="empty-state">Belum ada data presensi untuk santri ini.</div>`;
+
+  const badgeFor = status => {
+    if (status === 'hadir') return `<span class="badge badge-ok">Hadir</span>`;
+    if (status === 'sakit') return `<span class="badge badge-warn">Sakit</span>`;
+    if (status === 'izin') return `<span class="badge badge-warn">Izin</span>`;
+    return `<span class="badge badge-danger">Alpa</span>`;
+  };
+
+  const rekap = items.reduce((acc, p) => {
+    acc[p.status] = (acc[p.status] || 0) + 1;
+    return acc;
+  }, {});
+
+  const rows = items.map(p => `
+    <tr>
+      <td>${p.tanggal}</td>
+      <td>${badgeFor(p.status)}</td>
+      <td>${p.keterangan || '-'}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="panel">
+      <h2 class="panel-title">Riwayat Presensi Harian</h2>
+      <p style="margin:0 0 12px;color:var(--text-muted,#666);">
+        Hadir: ${rekap.hadir || 0} · Sakit: ${rekap.sakit || 0} ·
+        Izin: ${rekap.izin || 0} · Alpa: ${rekap.alpa || 0}
+      </p>
+      <table>
+        <thead><tr><th>Tanggal</th><th>Status</th><th>Keterangan</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
 }
 
 // ---------------- TAB: KEUANGAN ----------------

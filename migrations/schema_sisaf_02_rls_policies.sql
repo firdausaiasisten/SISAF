@@ -191,3 +191,40 @@ create policy "notifikasi_settings_select_authenticated" on notifikasi_settings 
   using (auth.role() = 'authenticated');
 create policy "notifikasi_settings_update_notif_managers" on notifikasi_settings for update
   using (sisaf_current_role() in ('admin', 'bendahara'));
+
+-- ============================================================
+-- PRESENSI_HARIAN
+-- Berbeda dari nilai/kedisiplinan/kesehatan/dokumen: tabel ini SUDAH
+-- punya form tulis nyata di app.js untuk wali_kelas (recordPresensi,
+-- dipakai layar input massal per kelas per tanggal). Maka write policy
+-- di sini TIDAK admin-only — wali_kelas boleh insert/update presensi
+-- untuk santri di kelasnya sendiri saja (via sisaf_current_kelas_id()).
+-- ============================================================
+alter table presensi_harian enable row level security;
+
+create policy "presensi_select" on presensi_harian for select
+  using (sisaf_can_view_santri(santri_id));
+
+create policy "presensi_write_admin_or_own_class" on presensi_harian for insert
+  with check (
+    sisaf_current_role() = 'admin'
+    or (
+      sisaf_current_role() = 'wali_kelas'
+      and exists (
+        select 1 from santri s
+        where s.id = santri_id and s.kelas_id = sisaf_current_kelas_id()
+      )
+    )
+  );
+
+create policy "presensi_update_admin_or_own_class" on presensi_harian for update
+  using (
+    sisaf_current_role() = 'admin'
+    or (
+      sisaf_current_role() = 'wali_kelas'
+      and exists (
+        select 1 from santri s
+        where s.id = santri_id and s.kelas_id = sisaf_current_kelas_id()
+      )
+    )
+  );

@@ -137,10 +137,23 @@ const MockDB = (function () {
     { id: 'sh4', santri_id: 's4', status_sebelumnya: null, status_baru: 'aktif', tanggal_efektif: '2024-07-08', alasan: 'Pendaftaran awal tahun ajaran 2024/2025', dokumen_rujukan: null, disetujui_oleh: 'Admin SISAF' },
   ];
 
+  // ---------------- SEED: PRESENSI HARIAN ----------------
+  // status: 'hadir' | 'sakit' | 'izin' | 'alpa'. Satu baris per santri per
+  // tanggal (constraint unik santri_id+tanggal juga ditegakkan di migrasi).
+  const presensi = [
+    { id: 'ps1', santri_id: 's1', tanggal: '2026-08-14', status: 'hadir', keterangan: null, dicatat_oleh: 'u_walikelas1' },
+    { id: 'ps2', santri_id: 's2', tanggal: '2026-08-14', status: 'hadir', keterangan: null, dicatat_oleh: 'u_walikelas1' },
+    { id: 'ps3', santri_id: 's3', tanggal: '2026-08-14', status: 'sakit', keterangan: 'Demam, izin ke klinik asrama', dicatat_oleh: 'u_walikelas2' },
+    { id: 'ps4', santri_id: 's4', tanggal: '2026-08-14', status: 'hadir', keterangan: null, dicatat_oleh: 'u_walikelas2' },
+    { id: 'ps5', santri_id: 's1', tanggal: '2026-08-15', status: 'hadir', keterangan: null, dicatat_oleh: 'u_walikelas1' },
+    { id: 'ps6', santri_id: 's2', tanggal: '2026-08-15', status: 'izin', keterangan: 'Pulang urusan keluarga', dicatat_oleh: 'u_walikelas1' },
+  ];
+
   return {
     kelas, waliSantri, santri, users, nilaiAkademik,
     keuanganSantri, kedisiplinan, kesehatanAsrama, dokumenSantri,
     notifikasiSettings, notifikasiLog, institutionSettings, statusHistory,
+    presensi,
   };
 })();
 
@@ -215,6 +228,58 @@ const mockDataService = {
   async getDokumenBySantri(santriId) {
     await _delay();
     return MockDB.dokumenSantri.filter(d => d.santri_id === santriId);
+  },
+
+  // ---------------- PRESENSI HARIAN ----------------
+  async getPresensiBySantri(santriId) {
+    await _delay();
+    return MockDB.presensi
+      .filter(p => p.santri_id === santriId)
+      .sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+  },
+
+  // Dipakai layar input massal wali kelas: satu kelas, satu tanggal,
+  // mengembalikan seluruh santri kelas tsb + status presensi (null kalau
+  // belum diisi) supaya UI bisa render form dalam satu panggilan.
+  async getPresensiByKelasTanggal(kelasId, tanggal) {
+    await _delay();
+    const daftarSantri = MockDB.santri.filter(s => s.kelas_id === kelasId && s.status === 'aktif');
+    return daftarSantri.map(s => {
+      const existing = MockDB.presensi.find(p => p.santri_id === s.id && p.tanggal === tanggal);
+      return {
+        santri_id: s.id,
+        nama: s.nama,
+        nis: s.nis,
+        status: existing ? existing.status : null,
+        keterangan: existing ? existing.keterangan : null,
+      };
+    });
+  },
+
+  // Upsert satu baris presensi (unik per santri_id+tanggal). Dipakai baik
+  // untuk isi baru maupun koreksi hari yang sama.
+  async recordPresensi({ santriId, tanggal, status, keterangan, dicatatOleh }) {
+    await _delay();
+    if (!['hadir', 'sakit', 'izin', 'alpa'].includes(status)) {
+      throw new Error('Status presensi tidak valid.');
+    }
+    const existing = MockDB.presensi.find(p => p.santri_id === santriId && p.tanggal === tanggal);
+    if (existing) {
+      existing.status = status;
+      existing.keterangan = keterangan || null;
+      existing.dicatat_oleh = dicatatOleh;
+      return existing;
+    }
+    const entry = {
+      id: 'ps' + (MockDB.presensi.length + 1) + '_' + Date.now(),
+      santri_id: santriId,
+      tanggal,
+      status,
+      keterangan: keterangan || null,
+      dicatat_oleh: dicatatOleh,
+    };
+    MockDB.presensi.push(entry);
+    return entry;
   },
 
   // ---------------- STATUS SANTRI (Student Master foundation) ----------------

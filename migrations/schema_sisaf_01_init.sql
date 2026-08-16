@@ -30,6 +30,7 @@ create type status_santri as enum (
 );
 create type status_pembayaran as enum ('lunas', 'belum_lunas', 'sebagian');
 create type jenis_kedisiplinan as enum ('pelanggaran', 'prestasi');
+create type presensi_status as enum ('hadir', 'sakit', 'izin', 'alpa');
 
 -- ---------- KELAS ----------
 create table kelas (
@@ -146,6 +147,23 @@ create table kedisiplinan (
   created_at timestamptz default now()
 );
 create index idx_kedisiplinan_santri on kedisiplinan(santri_id);
+
+-- ---------- PRESENSI HARIAN ----------
+-- Satu baris per santri per tanggal (unique constraint) — upsert dari
+-- aplikasi, bukan insert-only, karena wali kelas boleh mengoreksi hari
+-- yang sama.
+create table presensi_harian (
+  id uuid primary key default gen_random_uuid(),
+  santri_id uuid references santri(id) not null,
+  tanggal date not null,
+  status presensi_status not null,
+  keterangan text,
+  dicatat_oleh uuid references auth.users(id),
+  created_at timestamptz default now(),
+  unique (santri_id, tanggal)
+);
+create index idx_presensi_santri on presensi_harian(santri_id);
+create index idx_presensi_tanggal on presensi_harian(tanggal);
 
 -- ---------- KESEHATAN & ASRAMA ----------
 create table kesehatan_asrama (

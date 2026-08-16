@@ -147,6 +147,66 @@ const supabaseDataService = {
     return data;
   },
 
+  // ---------------- PRESENSI HARIAN ----------------
+  async getPresensiBySantri(santriId) {
+    const { data, error } = await _getClient()
+      .from('presensi_harian')
+      .select('*')
+      .eq('santri_id', santriId)
+      .order('tanggal', { ascending: false });
+    _throwIfError(error, 'getPresensiBySantri');
+    return data;
+  },
+
+  // Join manual (bukan RPC) supaya konsisten dengan gaya query lain di file
+  // ini; jumlah santri per kelas kecil jadi tidak perlu SQL function khusus.
+  async getPresensiByKelasTanggal(kelasId, tanggal) {
+    const client = _getClient();
+    const { data: daftarSantri, error: errSantri } = await client
+      .from('santri')
+      .select('id, nama, nis')
+      .eq('kelas_id', kelasId)
+      .eq('status', 'aktif');
+    _throwIfError(errSantri, 'getPresensiByKelasTanggal:santri');
+
+    const { data: presensiHariItu, error: errPresensi } = await client
+      .from('presensi_harian')
+      .select('santri_id, status, keterangan')
+      .eq('tanggal', tanggal)
+      .in('santri_id', (daftarSantri || []).map(s => s.id));
+    _throwIfError(errPresensi, 'getPresensiByKelasTanggal:presensi');
+
+    return (daftarSantri || []).map(s => {
+      const existing = (presensiHariItu || []).find(p => p.santri_id === s.id);
+      return {
+        santri_id: s.id,
+        nama: s.nama,
+        nis: s.nis,
+        status: existing ? existing.status : null,
+        keterangan: existing ? existing.keterangan : null,
+      };
+    });
+  },
+
+  async recordPresensi({ santriId, tanggal, status, keterangan, dicatatOleh }) {
+    const { data, error } = await _getClient()
+      .from('presensi_harian')
+      .upsert(
+        {
+          santri_id: santriId,
+          tanggal,
+          status,
+          keterangan: keterangan || null,
+          dicatat_oleh: dicatatOleh,
+        },
+        { onConflict: 'santri_id,tanggal' }
+      )
+      .select()
+      .single();
+    _throwIfError(error, 'recordPresensi');
+    return data;
+  },
+
   // ---------------- KESEHATAN & ASRAMA ----------------
   async getKesehatanBySantri(santriId) {
     const { data, error } = await _getClient()

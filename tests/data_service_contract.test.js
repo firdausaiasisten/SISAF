@@ -67,12 +67,13 @@ function tryLoadSupabaseImpl() {
   }
 }
 
-// Daftar 20 fungsi wajib ada di kedua implementasi (paritas signature).
+// Daftar 23 fungsi wajib ada di kedua implementasi (paritas signature).
 const REQUIRED_FUNCTIONS = [
   'login', 'logout',
   'getKelasList',
   'getSantriList', 'getSantriById',
   'getNilaiBySantri',
+  'getPresensiBySantri', 'getPresensiByKelasTanggal', 'recordPresensi',
   'getKeuanganBySantri',
   'getKedisiplinanBySantri',
   'getKesehatanBySantri',
@@ -187,6 +188,55 @@ function runContractSuite(label, getImpl) {
 
     for (const [nama, arr] of Object.entries({ nilai, keuangan, kedisiplinan, dokumen, riwayat })) {
       assert.ok(Array.isArray(arr), `${nama} harus berupa array`);
+    }
+  });
+
+  test(`[${label}] recordPresensi: insert baru lalu update hari sama tidak menduplikasi baris (upsert per santri_id+tanggal)`, async () => {
+    const impl = getImpl();
+    const { user: admin } = await impl.login(KNOWN_USERS.admin.email, KNOWN_USERS.admin.password);
+    const [santriPertama] = await impl.getSantriList(admin);
+    assert.ok(santriPertama, 'butuh minimal 1 santri di seed data untuk test ini');
+    const tanggalUji = '2099-01-01'; // tanggal jauh ke depan supaya tidak bentrok seed
+
+    const sebelum = (await impl.getPresensiBySantri(santriPertama.id))
+      .filter(p => p.tanggal === tanggalUji).length;
+    assert.strictEqual(sebelum, 0, 'tidak boleh ada seed di tanggal uji');
+
+    await impl.recordPresensi({
+      santriId: santriPertama.id, tanggal: tanggalUji,
+      status: 'hadir', keterangan: null, dicatatOleh: admin.id,
+    });
+    await impl.recordPresensi({
+      santriId: santriPertama.id, tanggal: tanggalUji,
+      status: 'izin', keterangan: 'Koreksi', dicatatOleh: admin.id,
+    });
+
+    const setelah = (await impl.getPresensiBySantri(santriPertama.id))
+      .filter(p => p.tanggal === tanggalUji);
+    assert.strictEqual(setelah.length, 1, 'upsert harus menghasilkan tepat 1 baris untuk santri+tanggal yang sama');
+    assert.strictEqual(setelah[0].status, 'izin', 'panggilan kedua harus menimpa status, bukan menambah baris');
+  });
+
+  test(`[${label}] recordPresensi menolak status di luar enum yang valid`, async () => {
+    const impl = getImpl();
+    const { user: admin } = await impl.login(KNOWN_USERS.admin.email, KNOWN_USERS.admin.password);
+    const [santriPertama] = await impl.getSantriList(admin);
+    await assert.rejects(
+      impl.recordPresensi({
+        santriId: santriPertama.id, tanggal: '2099-01-02',
+        status: 'bolos', keterangan: null, dicatatOleh: admin.id,
+      })
+    );
+  });
+
+  test(`[${label}] getPresensiByKelasTanggal mengembalikan seluruh santri aktif di kelas, status null kalau belum diisi`, async () => {
+    const impl = getImpl();
+    const kelasList = await impl.getKelasList();
+    assert.ok(kelasList.length > 0, 'butuh minimal 1 kelas di seed data untuk test ini');
+    const hasil = await impl.getPresensiByKelasTanggal(kelasList[0].id, '2099-01-03');
+    assert.ok(Array.isArray(hasil));
+    for (const baris of hasil) {
+      assert.ok('santri_id' in baris && 'nama' in baris && 'status' in baris);
     }
   });
 
