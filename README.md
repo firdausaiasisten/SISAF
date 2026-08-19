@@ -351,7 +351,120 @@ Untuk konteks — bukan berarti semua pembanding lebih unggul:
 - **Test kontrak otomatis untuk data layer** — jarang ditemukan di
   proyek PHP/Laravel sejenis pada riset ini.
 
+## Roadmap Pengembangan Jangka Panjang
 
+Bagian ini memberi **gambaran besar lintas waktu** — kenapa urutannya
+begini, apa yang diblokir oleh apa, dan kapan keputusan bisnis (bukan
+teknis) diperlukan. Detail task per file/PR ada di bagian "Fase 1–5" di
+bawah; bagian ini menjelaskan *rasionalnya* dan menyatukannya dengan
+rekomendasi fitur dari riset komparatif di atas. Estimasi horizon waktu
+bersifat relatif terhadap kecepatan tim (jumlah kontributor aktif), bukan
+tanggal kalender pasti — SISAF adalah prototipe satu-tim, bukan proyek
+dengan deadline eksternal yang ketat.
+
+### Horizon 1 — Fondasi (blocking, harus selesai lebih dulu)
+
+**Tujuan:** membuat SISAF berjalan di atas data sungguhan, bukan lagi
+data contoh. Tanpa ini, semua horizon berikutnya hanya membangun di atas
+fondasi yang belum ada.
+
+- **Fase 1 (backend Supabase nyata)** — saat ini **blocker utama**:
+  project Supabase belum dibuat (butuh akses dashboard manusia, tidak
+  bisa dilakukan dari sandbox pengembangan). Begitu project dibuat,
+  sisanya sudah siap dieksekusi: migrasi SQL, RLS policy, dan
+  `supabaseDataService.js` sudah ditulis lengkap, tinggal diuji terhadap
+  Postgres nyata.
+- **Fase 2 (kualitas & keamanan frontend)** — **sudah selesai**: test
+  kontrak data layer, error tracking self-hosted, dan rapikan CSS.
+  Disebut di sini karena secara strategi memang sengaja dikerjakan
+  paralel dengan Fase 1 agar tidak ada waktu tim menganggur menunggu
+  backend.
+- **Kenapa diprioritaskan:** setiap fitur baru (Admission, notifikasi
+  WA nyata, dst.) butuh data yang persisten dan aman diakses lintas
+  role. Membangun fitur baru di atas mock data dulu akan berarti
+  menulis ulang alur data dua kali.
+
+### Horizon 2 — Kelengkapan Siklus Hidup Santri
+
+**Tujuan:** menutup celah siklus hidup santri dari pendaftaran sampai
+lulus, plus fitur operasional harian yang paling sering muncul di
+aplikasi sejenis (lihat "Riset Komparatif" di atas).
+
+- **Fase 3 (Admission & Graduation)** — data layer sudah ditulis
+  (lihat commit `faa7cec`), UI belum. Baru bisa dilanjutkan penuh
+  setelah Fase 1 selesai, karena pipeline penerimaan punya lebih banyak
+  state transisi dan validasi dokumen daripada yang nyaman disimulasikan
+  dengan mock saja.
+- **Buku kas / tabungan santri** (prioritas tinggi dari riset
+  komparatif) — beda dari `keuanganSantri` (tagihan searah); ini saldo
+  dua arah (setor/tarik). Cocok dikerjakan berdampingan dengan Fase 3
+  karena sama-sama menyentuh alur keuangan per santri.
+- **Log aktivitas / audit trail** (prioritas tinggi) — perluasan wajar
+  dari `errorTracking.js` yang sudah ada. Penting justru **sebelum**
+  data produksi mulai terisi lewat Admission, supaya sejak hari pertama
+  ada jejak siapa-mengubah-apa-kapan, bukan ditambahkan belakangan
+  setelah ada insiden.
+- **Perizinan pulang/keluar asrama** (prioritas sedang) — bisa dibangun
+  di atas pola `changeStudentStatus` yang sudah ada, jadi biaya
+  implementasinya relatif kecil begitu Fase 1 selesai.
+
+### Horizon 3 — Komunikasi & Akses yang Lebih Luas
+
+**Tujuan:** memperluas siapa yang bisa mengakses SISAF dan bagaimana
+institusi berkomunikasi keluar, sekarang berbasis backend yang sudah aman.
+
+- **Fase 4 (Notifikasi WhatsApp nyata)** — butuh Supabase Edge Function
+  untuk menyimpan token API di server (tidak boleh di frontend). Sengaja
+  ditunda sampai Fase 1 selesai karena Edge Function adalah bagian dari
+  infrastruktur Supabase.
+- **Portal santri sendiri** (prioritas sedang) — role baru selain
+  `wali_santri`, supaya santri (terutama yang lebih besar) bisa login
+  melihat data sendiri. Butuh keputusan kebijakan institusi dulu (usia
+  minimum santri yang boleh punya akun sendiri) sebelum dikerjakan
+  secara teknis.
+- **Pelacakan hafalan Al-Qur'an per juz/surat** (prioritas sedang) —
+  kalau institusi memang fokus tahfizh, ini modul terpisah yang lebih
+  berguna daripada baris nilai akademik biasa seperti sekarang.
+
+### Horizon 4 — Perluasan Opsional & Keputusan Bisnis
+
+**Tujuan:** fitur yang bernilai tapi tidak mendesak, atau yang perubahan
+skalanya besar sehingga butuh keputusan eksplisit dari pemilik produk,
+bukan sekadar keputusan teknis tim.
+
+- **Fase 5 (Multi-tenant SaaS)** — perubahan besar ke RLS (per-tenant,
+  bukan cuma per-role). `institution_settings` sudah disiapkan arahnya
+  (tinggal tambah kolom `tenant_id`), tapi **jangan mulai tanpa
+  keputusan bisnis eksplisit** — ini mengubah SISAF dari sistem
+  satu-pesantren menjadi produk multi-pelanggan, dengan implikasi biaya
+  operasional dan tanggung jawab data yang berbeda.
+- **Jadwal pelajaran/kelas** (prioritas rendah) — SISAF fokus
+  administrasi kesantrian, bukan akademik penuh; masuk akal ditunda
+  sampai ada permintaan eksplisit dari pengguna.
+- **Manajemen inventaris/aset asrama** (prioritas rendah) — relevan
+  kalau pesantren mau mengelola barang lewat SISAF juga, tapi jauh dari
+  scope inti "data santri" saat ini.
+- **Absensi biometrik/RFID/face-recognition** (prioritas rendah) —
+  investasi hardware, bukan sekadar fitur software. Cocok jadi backlog
+  jangka panjang yang dipertimbangkan ulang setelah Horizon 1–3 stabil
+  dan institusi sudah punya anggaran untuk perangkat keras.
+
+### Prinsip pengurutan roadmap ini
+
+1. **Backend nyata sebelum fitur baru** — Horizon 1 memblokir semua
+   horizon lain, sudah dijelaskan di atas.
+2. **Celah operasional harian sebelum perluasan akses** — Horizon 2
+   (yang langsung dipakai admin/wali kelas sehari-hari) didahulukan
+   dari Horizon 3 (yang menambah jenis pengguna baru).
+3. **Keputusan bisnis dipisah dari keputusan teknis** — Horizon 4
+   sengaja diberi label "opsional"/"butuh keputusan" supaya tim teknis
+   tidak mulai mengerjakan sesuatu yang skalanya besar (SaaS,
+   biometrik) tanpa persetujuan eksplisit dari pemilik produk soal
+   biaya dan arah bisnis.
+4. **Setiap horizon punya keluaran yang bisa diuji**, bukan sekadar
+   "selesai secara subjektif" — mengikuti pola yang sudah ada di Fase 1
+   ("`CONFIG.APP_MODE = 'supabase'` bisa dinyalakan dan `dom_verify.js`
+   tetap lulus").
 
 Bagian ini untuk tim yang mengembangkan SISAF bersama-sama. Tujuannya
 dua: (1) urutan kerja yang jelas supaya tidak ada yang membangun di atas
