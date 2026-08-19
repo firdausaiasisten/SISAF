@@ -1,0 +1,12 @@
+# SISAF — konfigurasi Cloudflare Pages.
+#
+# Tidak ada build step (vanilla JS, semua file dimuat sebagai <script>
+# biasa langsung dari root repo — lihat README). "npm run build" yang
+# didefinisikan di package.json sengaja no-op, hanya supaya build command
+# default Cloudflare Pages tidak gagal mencari package.json.
+#
+# pages_build_output_dir menunjuk ke root (".") karena index.html ada
+# langsung di sini, bukan di folder dist/build hasil bundler.
+name = "sisaf"
+pages_build_output_dir = "."
+compatibility_date = "2026-08-19"

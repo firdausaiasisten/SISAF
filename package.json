@@ -1,0 +1,14 @@
+{
+  "name": "sisaf",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SISAF — Sistem Informasi Santri Al-Falah. Vanilla JS, tanpa build step (lihat README).",
+  "scripts": {
+    "build": "echo 'SISAF tidak punya build step -- semua file dimuat langsung sebagai <script>. Script ini cuma no-op supaya npm run build tidak gagal di platform yang selalu memanggilnya (mis. Cloudflare Pages default).'",
+    "test": "node --test tests/data_service_contract.test.js",
+    "verify": "node dom_verify.js"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1"
+  }
+}
