@@ -17,7 +17,7 @@
 -- ============================================================
 
 begin;
-select plan(33);
+select plan(40);
 
 -- ---------------- FIXTURE DATA ----------------
 -- Dua kelas, dua santri (satu per kelas), satu wali_santri per santri,
@@ -278,6 +278,54 @@ select test_login_as('a0000000-0000-0000-0000-000000000003'); -- wali_kelas
 select is(
   (select count(*) from applicants)::int, 0,
   'wali_kelas melihat 0 baris applicants (RLS select memfilter diam-diam, bukan error -- bukan admin/kepala_sekolah)'
+);
+
+-- ============================================================
+-- IZIN_PULANG (Perizinan Pulang Asrama, schema_sisaf_04) — insert
+-- admin ATAU wali_kelas kelasnya sendiri (pola sama presensi_harian),
+-- update (approve/reject/kembali) admin SAJA.
+-- ============================================================
+select test_login_as('a0000000-0000-0000-0000-000000000001'); -- admin
+select lives_ok(
+  $$ insert into izin_pulang (id, santri_id, tanggal_keluar, tanggal_rencana_kembali, alasan)
+     values ('88888888-8888-8888-8888-888888888888', '55555555-5555-5555-5555-555555555555', current_date, current_date + 1, 'Uji admin') $$,
+  'admin BISA insert izin_pulang untuk santri mana pun'
+);
+
+select test_login_as('a0000000-0000-0000-0000-000000000003'); -- wali_kelas A (kelas Santri A)
+select lives_ok(
+  $$ insert into izin_pulang (santri_id, tanggal_keluar, tanggal_rencana_kembali, alasan)
+     values ('55555555-5555-5555-5555-555555555555', current_date, current_date + 1, 'Uji wali_kelas kelas sendiri') $$,
+  'wali_kelas BISA insert izin_pulang untuk santri di kelasnya sendiri'
+);
+select throws_ok(
+  $$ insert into izin_pulang (santri_id, tanggal_keluar, tanggal_rencana_kembali, alasan)
+     values ('66666666-6666-6666-6666-666666666666', current_date, current_date + 1, 'Uji wali_kelas kelas lain') $$,
+  '42501',
+  null,
+  'wali_kelas DILARANG insert izin_pulang untuk santri di kelas lain'
+);
+select throws_ok(
+  $$ update izin_pulang set status = 'disetujui' where id = '88888888-8888-8888-8888-888888888888' $$,
+  '42501',
+  null,
+  'wali_kelas DILARANG menyetujui/mengubah status izin_pulang (admin saja)'
+);
+
+select test_login_as('a0000000-0000-0000-0000-000000000001'); -- admin
+select lives_ok(
+  $$ update izin_pulang set status = 'disetujui' where id = '88888888-8888-8888-8888-888888888888' $$,
+  'admin BISA menyetujui izin_pulang'
+);
+select is(
+  (select count(*) from izin_pulang)::int, 2,
+  'admin melihat semua baris izin_pulang yang sudah dibuat (admin + wali_kelas)'
+);
+
+select test_login_as('a0000000-0000-0000-0000-000000000005'); -- wali_santri A (wali dari Santri A)
+select is(
+  (select count(*) from izin_pulang)::int, 2,
+  'wali_santri BISA membaca izin_pulang anaknya sendiri (dua baris, keduanya untuk Santri A)'
 );
 
 select * from finish();

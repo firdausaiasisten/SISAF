@@ -149,6 +149,19 @@ const MockDB = (function () {
     { id: 'ps6', santri_id: 's2', tanggal: '2026-08-15', status: 'izin', keterangan: 'Pulang urusan keluarga', dicatat_oleh: 'u_walikelas1' },
   ];
 
+  // ---------------- SEED: PERIZINAN PULANG ASRAMA ----------------
+  // status: 'diajukan' -> 'disetujui' -> 'kembali', atau 'diajukan' -> 'ditolak'.
+  // Alur approval sengaja tidak otomatis (createIzinPulang HANYA membuat
+  // pengajuan berstatus 'diajukan'; persetujuan adalah langkah terpisah lewat
+  // updateIzinPulangStatus) -- pola sama dengan Admission: createApplicant
+  // vs updateApplicantStatus, supaya ada jejak siapa mengajukan vs siapa
+  // menyetujui.
+  const izinPulang = [
+    { id: 'ip1', santri_id: 's1', tanggal_keluar: '2026-08-20', tanggal_rencana_kembali: '2026-08-22', tanggal_kembali_aktual: null, alasan: 'Acara keluarga (pernikahan saudara)', status: 'diajukan', diajukan_oleh: 'Ust. Fadhil Rahman', disetujui_oleh: null, catatan_persetujuan: null },
+    { id: 'ip2', santri_id: 's2', tanggal_keluar: '2026-08-01', tanggal_rencana_kembali: '2026-08-03', tanggal_kembali_aktual: '2026-08-03', alasan: 'Kontrol kesehatan rutin', status: 'kembali', diajukan_oleh: 'Ust. Fadhil Rahman', disetujui_oleh: 'Admin SISAF', catatan_persetujuan: null },
+    { id: 'ip3', santri_id: 's3', tanggal_keluar: '2026-07-25', tanggal_rencana_kembali: '2026-07-27', tanggal_kembali_aktual: null, alasan: 'Pulang tanpa keperluan mendesak', status: 'ditolak', diajukan_oleh: 'Ustzh. Aisyah Putri', disetujui_oleh: 'Admin SISAF', catatan_persetujuan: 'Belum mendekati jadwal pulang bulanan, ditunda ke jadwal berikutnya.' },
+  ];
+
   // ---------------- SEED: APPLICANTS (Admission) ----------------
   // status pakai subset status_santri: 'calon_santri' -> 'diterima' -> 'terdaftar'.
   // Begitu 'terdaftar', satu baris santri baru dibuat otomatis (lihat
@@ -162,7 +175,7 @@ const MockDB = (function () {
     kelas, waliSantri, santri, users, nilaiAkademik,
     keuanganSantri, kedisiplinan, kesehatanAsrama, dokumenSantri,
     notifikasiSettings, notifikasiLog, institutionSettings, statusHistory,
-    presensi, applicants,
+    presensi, applicants, izinPulang,
   };
 })();
 
@@ -291,6 +304,84 @@ const mockDataService = {
       dicatat_oleh: dicatatOleh,
     };
     MockDB.presensi.push(entry);
+    return entry;
+  },
+
+  // ---------------- PERIZINAN PULANG ASRAMA ----------------
+  async getIzinPulangBySantri(santriId) {
+    await _delay();
+    return MockDB.izinPulang
+      .filter(p => p.santri_id === santriId)
+      .sort((a, b) => new Date(b.tanggal_keluar) - new Date(a.tanggal_keluar));
+  },
+
+  // Tulis: admin (semua santri) atau wali_kelas (hanya santri di kelasnya
+  // sendiri) -- pola sama dengan recordPresensi, bukan admin-only seperti
+  // nilai/kedisiplinan/kesehatan/dokumen, karena modul ini memang punya
+  // form pengajuan nyata untuk wali_kelas.
+  async createIzinPulang({ santriId, tanggalKeluar, tanggalRencanaKembali, alasan }, currentUser) {
+    await _delay();
+    if (!currentUser || !['admin', 'wali_kelas'].includes(currentUser.role)) {
+      throw new Error('Hanya admin atau wali kelas yang boleh mengajukan izin pulang.');
+    }
+    if (currentUser.role === 'wali_kelas') {
+      const santriRecord = MockDB.santri.find(s => s.id === santriId);
+      if (!santriRecord || santriRecord.kelas_id !== currentUser.kelas_id) {
+        throw new Error('Wali kelas hanya boleh mengajukan izin pulang untuk santri di kelasnya sendiri.');
+      }
+    }
+    if (!tanggalKeluar || !tanggalRencanaKembali || !alasan) {
+      throw new Error('Tanggal keluar, tanggal rencana kembali, dan alasan wajib diisi.');
+    }
+    if (new Date(tanggalRencanaKembali) < new Date(tanggalKeluar)) {
+      throw new Error('Tanggal rencana kembali tidak boleh sebelum tanggal keluar.');
+    }
+    const entry = {
+      id: 'ip' + (MockDB.izinPulang.length + 1) + '_' + Date.now(),
+      santri_id: santriId,
+      tanggal_keluar: tanggalKeluar,
+      tanggal_rencana_kembali: tanggalRencanaKembali,
+      tanggal_kembali_aktual: null,
+      alasan,
+      status: 'diajukan',
+      diajukan_oleh: currentUser.nama || currentUser.email,
+      disetujui_oleh: null,
+      catatan_persetujuan: null,
+    };
+    MockDB.izinPulang.push(entry);
+    return entry;
+  },
+
+  // Transisi TIDAK linear tunggal seperti Admission ('diajukan' bercabang
+  // ke 'disetujui' ATAU 'ditolak') -- makanya divalidasi lewat peta
+  // transisi eksplisit, bukan array urutan seperti updateApplicantStatus.
+  // Menyetujui/menolak/mencatat kembali sengaja admin-only (dipusatkan ke
+  // satu role) -- ini keputusan institusional (siapa boleh keluar asrama),
+  // beda dari presensi yang operasional harian dan boleh wali_kelas.
+  async updateIzinPulangStatus(izinId, statusBaru, currentUser, extra = {}) {
+    await _delay(200);
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Hanya admin yang boleh memproses status izin pulang.');
+    }
+    const entry = MockDB.izinPulang.find(p => p.id === izinId);
+    if (!entry) throw new Error('Data izin pulang tidak ditemukan.');
+
+    const TRANSISI_VALID = {
+      diajukan: ['disetujui', 'ditolak'],
+      disetujui: ['kembali'],
+    };
+    const opsiValid = TRANSISI_VALID[entry.status] || [];
+    if (!opsiValid.includes(statusBaru)) {
+      throw new Error(`Transisi status tidak valid: ${entry.status} -> ${statusBaru}.`);
+    }
+    if (statusBaru === 'kembali' && !extra.tanggalKembaliAktual) {
+      throw new Error('Tanggal kembali aktual wajib diisi saat mencatat santri kembali.');
+    }
+
+    entry.status = statusBaru;
+    entry.disetujui_oleh = currentUser.nama || currentUser.email;
+    if (extra.catatan) entry.catatan_persetujuan = extra.catatan;
+    if (statusBaru === 'kembali') entry.tanggal_kembali_aktual = extra.tanggalKembaliAktual;
     return entry;
   },
 

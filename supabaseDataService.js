@@ -211,6 +211,77 @@ const supabaseDataService = {
     return data;
   },
 
+  // ---------------- PERIZINAN PULANG ASRAMA ----------------
+  async getIzinPulangBySantri(santriId) {
+    const { data, error } = await _getClient()
+      .from('izin_pulang')
+      .select('*')
+      .eq('santri_id', santriId)
+      .order('tanggal_keluar', { ascending: false });
+    _throwIfError(error, 'getIzinPulangBySantri');
+    return data;
+  },
+
+  async createIzinPulang({ santriId, tanggalKeluar, tanggalRencanaKembali, alasan }, currentUser) {
+    if (!currentUser || !['admin', 'wali_kelas'].includes(currentUser.role)) {
+      throw new Error('Hanya admin atau wali kelas yang boleh mengajukan izin pulang.');
+    }
+    const client = _getClient();
+    if (currentUser.role === 'wali_kelas') {
+      const { data: santriRecord, error: fetchError } = await client
+        .from('santri').select('kelas_id').eq('id', santriId).single();
+      _throwIfError(fetchError, 'createIzinPulang (cek kelas)');
+      if (!santriRecord || santriRecord.kelas_id !== currentUser.kelas_id) {
+        throw new Error('Wali kelas hanya boleh mengajukan izin pulang untuk santri di kelasnya sendiri.');
+      }
+    }
+    const { data, error } = await client
+      .from('izin_pulang')
+      .insert({
+        santri_id: santriId,
+        tanggal_keluar: tanggalKeluar,
+        tanggal_rencana_kembali: tanggalRencanaKembali,
+        alasan,
+        status: 'diajukan',
+        diajukan_oleh: currentUser.nama || currentUser.email,
+      })
+      .select().single();
+    _throwIfError(error, 'createIzinPulang');
+    return data;
+  },
+
+  // Fetch status lama dulu supaya pesan error transisi tidak valid konsisten
+  // dengan versi mock (menyebutkan status asal), bukan cuma mengandalkan RLS
+  // menolak update yang salah tanpa penjelasan yang jelas.
+  async updateIzinPulangStatus(izinId, statusBaru, currentUser, extra = {}) {
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Hanya admin yang boleh memproses status izin pulang.');
+    }
+    const client = _getClient();
+    const { data: entry, error: fetchError } = await client
+      .from('izin_pulang').select('status').eq('id', izinId).single();
+    _throwIfError(fetchError, 'updateIzinPulangStatus (fetch)');
+
+    const TRANSISI_VALID = { diajukan: ['disetujui', 'ditolak'], disetujui: ['kembali'] };
+    const opsiValid = TRANSISI_VALID[entry.status] || [];
+    if (!opsiValid.includes(statusBaru)) {
+      throw new Error(`Transisi status tidak valid: ${entry.status} -> ${statusBaru}.`);
+    }
+    if (statusBaru === 'kembali' && !extra.tanggalKembaliAktual) {
+      throw new Error('Tanggal kembali aktual wajib diisi saat mencatat santri kembali.');
+    }
+
+    const payload = { status: statusBaru, disetujui_oleh: currentUser.nama || currentUser.email };
+    if (extra.catatan) payload.catatan_persetujuan = extra.catatan;
+    if (statusBaru === 'kembali') payload.tanggal_kembali_aktual = extra.tanggalKembaliAktual;
+
+    const { data, error } = await client
+      .from('izin_pulang').update(payload).eq('id', izinId)
+      .select().single();
+    _throwIfError(error, 'updateIzinPulangStatus');
+    return data;
+  },
+
   // ---------------- KESEHATAN & ASRAMA ----------------
   async getKesehatanBySantri(santriId) {
     const { data, error } = await _getClient()

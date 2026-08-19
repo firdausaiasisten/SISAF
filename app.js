@@ -48,6 +48,7 @@ const UI_SETTINGS_MANAGER_ROLES = ['admin'];
 const TABS = [
   { key: 'akademik', label: 'Akademik' },
   { key: 'presensi', label: 'Presensi' },
+  { key: 'perizinan', label: 'Perizinan Pulang' },
   { key: 'keuangan', label: 'Keuangan Santri' },
   { key: 'kedisiplinan', label: 'Kedisiplinan' },
   { key: 'kesehatan', label: 'Kesehatan & Asrama' },
@@ -594,6 +595,7 @@ async function renderDetailSantri(santriId) {
   let tabContent = '';
   if (state.activeTab === 'akademik') tabContent = await renderTabAkademik(santri);
   else if (state.activeTab === 'presensi') tabContent = await renderTabPresensi(santri);
+  else if (state.activeTab === 'perizinan') tabContent = await renderTabPerizinan(santri);
   else if (state.activeTab === 'keuangan') tabContent = await renderTabKeuangan(santri);
   else if (state.activeTab === 'kedisiplinan') tabContent = await renderTabKedisiplinan(santri);
   else if (state.activeTab === 'kesehatan') tabContent = await renderTabKesehatan(santri);
@@ -698,6 +700,116 @@ async function renderTabPresensi(santri) {
       </table>
     </div>
   `;
+}
+
+// ---------------- TAB: PERIZINAN PULANG ASRAMA ----------------
+async function renderTabPerizinan(santri) {
+  const items = await dataService.getIzinPulangBySantri(santri.id);
+
+  const badgeFor = status => {
+    if (status === 'disetujui') return `<span class="badge badge-warn">Disetujui (belum kembali)</span>`;
+    if (status === 'ditolak') return `<span class="badge badge-danger">Ditolak</span>`;
+    if (status === 'kembali') return `<span class="badge badge-ok">Sudah Kembali</span>`;
+    return `<span class="badge badge-warn">Menunggu Persetujuan</span>`;
+  };
+
+  // Menyetujui/menolak/mencatat kembali: admin saja (keputusan
+  // institusional). Mengajukan: admin atau wali_kelas -- tab ini sendiri
+  // sudah otomatis terbatas ke santri yang boleh dilihat wali_kelas
+  // (_filterSantriByRole di data layer), jadi tidak perlu cek kelas lagi
+  // di sini; data layer tetap memvalidasi ulang kalau ada jalur lain.
+  const canProses = state.user.role === 'admin';
+  const canAjukan = ['admin', 'wali_kelas'].includes(state.user.role);
+
+  const rows = items.map(p => {
+    let aksi = '<span style="color:var(--ink-faint);">—</span>';
+    const btnOutline = 'padding:4px 10px;font-size:12.5px;border:1px solid var(--line);border-radius:6px;background:var(--bg);cursor:pointer;';
+    const btnDanger = btnOutline + 'color:var(--danger);border-color:var(--danger-bg);';
+    if (canProses && p.status === 'diajukan') {
+      aksi = `
+        <button data-action="setujuiIzinPulang" data-izin-id="${p.id}" style="${btnOutline}margin-right:6px;">Setujui</button>
+        <button data-action="tolakIzinPulang" data-izin-id="${p.id}" style="${btnDanger}">Tolak</button>
+      `;
+    } else if (canProses && p.status === 'disetujui') {
+      aksi = `<button data-action="catatKembaliIzinPulang" data-izin-id="${p.id}" style="${btnOutline}">Catat Kembali (hari ini)</button>`;
+    }
+    return `
+      <tr>
+        <td>${p.tanggal_keluar}</td>
+        <td>${p.tanggal_rencana_kembali}</td>
+        <td>${p.tanggal_kembali_aktual || '-'}</td>
+        <td>${p.alasan}</td>
+        <td>${badgeFor(p.status)}</td>
+        <td>${aksi}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const listPanel = `
+    <div class="panel">
+      <h2 class="panel-title">Riwayat Perizinan Pulang Asrama</h2>
+      ${items.length === 0
+        ? `<div class="empty-state">Belum ada pengajuan izin pulang untuk santri ini.</div>`
+        : `<table>
+            <thead><tr><th>Tanggal Keluar</th><th>Rencana Kembali</th><th>Kembali Aktual</th><th>Alasan</th><th>Status</th><th>Aksi</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>`}
+    </div>
+  `;
+
+  if (!canAjukan) return listPanel;
+
+  const formPanel = `
+    <div class="panel">
+      <h2 class="panel-title">Ajukan Izin Pulang</h2>
+      <form onsubmit="handleAjukanIzinPulang(event, '${santri.id}')">
+        <div class="field">
+          <label for="izin-keluar">Tanggal Keluar</label>
+          <input id="izin-keluar" type="date" required value="${new Date().toISOString().slice(0, 10)}">
+        </div>
+        <div class="field">
+          <label for="izin-kembali">Rencana Tanggal Kembali</label>
+          <input id="izin-kembali" type="date" required>
+        </div>
+        <div class="field">
+          <label for="izin-alasan">Alasan</label>
+          <textarea id="izin-alasan" rows="2" required style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:13.5px;background:var(--bg);font-family:inherit;"></textarea>
+        </div>
+        <button class="btn-primary" type="submit" style="width:auto;padding:9px 18px;">Ajukan Izin Pulang</button>
+      </form>
+    </div>
+  `;
+
+  return formPanel + listPanel;
+}
+
+async function handleAjukanIzinPulang(event, santriId) {
+  event.preventDefault();
+  const tanggalKeluar = document.getElementById('izin-keluar').value;
+  const tanggalRencanaKembali = document.getElementById('izin-kembali').value;
+  const alasan = document.getElementById('izin-alasan').value.trim();
+  if (!tanggalKeluar || !tanggalRencanaKembali || !alasan) return;
+  await dataService.createIzinPulang({ santriId, tanggalKeluar, tanggalRencanaKembali, alasan }, state.user);
+  await render();
+}
+
+// Tolak/Setujui tidak pakai window.prompt/confirm -- konsisten dengan
+// pola app.js yang selalu memakai form untuk input teks, bukan dialog
+// browser native. "Catat Kembali" memakai tanggal hari ini otomatis
+// (kasus paling umum: admin mencatat begitu santri benar-benar tiba).
+async function handleSetujuiIzinPulang(izinId) {
+  await dataService.updateIzinPulangStatus(izinId, 'disetujui', state.user);
+  await render();
+}
+async function handleTolakIzinPulang(izinId) {
+  await dataService.updateIzinPulangStatus(izinId, 'ditolak', state.user);
+  await render();
+}
+async function handleCatatKembaliIzinPulang(izinId) {
+  await dataService.updateIzinPulangStatus(izinId, 'kembali', state.user, {
+    tanggalKembaliAktual: new Date().toISOString().slice(0, 10),
+  });
+  await render();
 }
 
 // ---------------- TAB: KEUANGAN ----------------
@@ -1059,6 +1171,9 @@ const ACTION_HANDLERS = {
   openSantri: (el) => openSantri(el.dataset.santriId),
   setTab: (el) => setTab(el.dataset.tab),
   handlePrintRapor: (el) => handlePrintRapor(el.dataset.santriId, el.dataset.semester),
+  setujuiIzinPulang: (el) => handleSetujuiIzinPulang(el.dataset.izinId),
+  tolakIzinPulang: (el) => handleTolakIzinPulang(el.dataset.izinId),
+  catatKembaliIzinPulang: (el) => handleCatatKembaliIzinPulang(el.dataset.izinId),
 };
 
 function initEventDelegation() {

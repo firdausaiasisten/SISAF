@@ -85,6 +85,7 @@ const REQUIRED_FUNCTIONS = [
   'getKelasById', 'getWaliSantriById',
   'getApplicants', 'createApplicant', 'updateApplicantStatus',
   'checkGraduationEligibility', 'graduateSantri',
+  'getIzinPulangBySantri', 'createIzinPulang', 'updateIzinPulangStatus',
 ];
 
 // Kredensial user contoh yang SELALU ada di seed mock (lihat mockDataService.js).
@@ -395,6 +396,66 @@ function runContractSuite(label, getImpl) {
         'graduateSantri tidak boleh meluluskan santri yang masih punya tagihan belum lunas'
       );
     }
+  });
+
+  test(`[${label}] createIzinPulang: wali_kelas boleh mengajukan untuk santri di kelasnya sendiri, dilarang untuk kelas lain`, async () => {
+    const impl = getImpl();
+    const { user: admin } = await impl.login(KNOWN_USERS.admin.email, KNOWN_USERS.admin.password);
+    const { user: waliKelas } = await impl.login(KNOWN_USERS.waliKelas.email, KNOWN_USERS.waliKelas.password);
+    const semuaSantri = await impl.getSantriList(admin);
+    const santriKelasSendiri = semuaSantri.find(s => s.kelas_id === waliKelas.kelas_id);
+    const santriKelasLain = semuaSantri.find(s => s.kelas_id !== waliKelas.kelas_id);
+    assert.ok(santriKelasSendiri && santriKelasLain, 'butuh minimal satu santri di kelas sendiri dan satu di kelas lain untuk uji ini');
+
+    const entry = await impl.createIzinPulang({
+      santriId: santriKelasSendiri.id, tanggalKeluar: '2026-08-20', tanggalRencanaKembali: '2026-08-21', alasan: '[TEST OTOMATIS] Acara keluarga',
+    }, waliKelas);
+    assert.equal(entry.status, 'diajukan', 'pengajuan baru harus mulai dari status diajukan, tidak bisa langsung disetujui');
+
+    await assert.rejects(
+      () => impl.createIzinPulang({
+        santriId: santriKelasLain.id, tanggalKeluar: '2026-08-20', tanggalRencanaKembali: '2026-08-21', alasan: '[TEST OTOMATIS] Uji lintas kelas',
+      }, waliKelas),
+      /kelasnya sendiri/i,
+      'wali_kelas tidak boleh mengajukan izin pulang untuk santri di luar kelasnya'
+    );
+  });
+
+  test(`[${label}] updateIzinPulangStatus: hanya admin, transisi tidak boleh loncat, 'kembali' wajib tanggal aktual`, async () => {
+    const impl = getImpl();
+    const { user: admin } = await impl.login(KNOWN_USERS.admin.email, KNOWN_USERS.admin.password);
+    const { user: waliKelas } = await impl.login(KNOWN_USERS.waliKelas.email, KNOWN_USERS.waliKelas.password);
+    const semuaSantri = await impl.getSantriList(admin);
+    const santriKelasWaliKelas = semuaSantri.find(s => s.kelas_id === waliKelas.kelas_id);
+
+    const entry = await impl.createIzinPulang({
+      santriId: santriKelasWaliKelas.id, tanggalKeluar: '2026-08-25', tanggalRencanaKembali: '2026-08-26', alasan: '[TEST OTOMATIS] Uji transisi status',
+    }, admin);
+
+    await assert.rejects(
+      () => impl.updateIzinPulangStatus(entry.id, 'disetujui', waliKelas),
+      /admin/i,
+      'wali_kelas tidak boleh menyetujui/menolak izin pulang, hanya admin'
+    );
+
+    await assert.rejects(
+      () => impl.updateIzinPulangStatus(entry.id, 'kembali', admin),
+      /transisi/i,
+      'tidak boleh loncat dari diajukan langsung ke kembali, harus lewat disetujui dulu'
+    );
+
+    const disetujui = await impl.updateIzinPulangStatus(entry.id, 'disetujui', admin);
+    assert.equal(disetujui.status, 'disetujui');
+
+    await assert.rejects(
+      () => impl.updateIzinPulangStatus(entry.id, 'kembali', admin, {}),
+      /tanggal kembali aktual/i,
+      'mencatat kembali wajib menyertakan tanggalKembaliAktual'
+    );
+
+    const kembali = await impl.updateIzinPulangStatus(entry.id, 'kembali', admin, { tanggalKembaliAktual: '2026-08-26' });
+    assert.equal(kembali.status, 'kembali');
+    assert.equal(kembali.tanggal_kembali_aktual, '2026-08-26');
   });
 
   test(`[${label}] graduateSantri menolak role selain admin`, async () => {
