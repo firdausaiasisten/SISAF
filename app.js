@@ -32,8 +32,15 @@ const NAV_ITEMS = [
   { key: 'ringkasan', label: 'Ringkasan' },
   { key: 'daftar', label: 'Daftar Santri' },
   { key: 'presensi_input', label: 'Input Presensi', roles: ['admin', 'wali_kelas'] },
+  { key: 'admission', label: 'Penerimaan Santri', roles: ['admin', 'kepala_sekolah'] },
   { key: 'pengaturan', label: 'Pengaturan Institusi', roles: ['admin'] },
 ];
+
+// Role yang boleh MELIHAT layar Penerimaan Santri (admin + kepala_sekolah,
+// sama seperti otorisasi getApplicants di data layer). Menulis (terima/
+// daftarkan) tetap admin-saja -- dicek terpisah di renderAdmission/handler,
+// sama pola dengan UI_SETTINGS_MANAGER_ROLES.
+const ADMISSION_VIEW_ROLES = ['admin', 'kepala_sekolah'];
 
 // Role yang boleh mengubah profil institusi (nama, alamat, kontak).
 // Dulu bernama SETTINGS_MANAGER_ROLES sama seperti di mockDataService.js/
@@ -206,6 +213,9 @@ async function render() {
   if (state.view === 'presensi_input' && !['admin', 'wali_kelas'].includes(state.user.role)) {
     state.view = 'ringkasan';
   }
+  if (state.view === 'admission' && !ADMISSION_VIEW_ROLES.includes(state.user.role)) {
+    state.view = 'ringkasan';
+  }
   await renderAppShell();
 }
 
@@ -291,6 +301,8 @@ async function renderAppShell() {
     main.innerHTML = await renderPengaturan();
   } else if (state.view === 'presensi_input') {
     main.innerHTML = await renderPresensiInput();
+  } else if (state.view === 'admission') {
+    main.innerHTML = await renderAdmission();
   }
 }
 
@@ -533,6 +545,233 @@ async function handleSavePresensi(event) {
   } catch (err) {
     if (window.SISAF_reportHandledError) window.SISAF_reportHandledError('handleSavePresensi', err);
     state.presensiError = err.message || 'Gagal menyimpan presensi.';
+    await render();
+  }
+}
+
+// ---------------- VIEW: PENERIMAAN SANTRI (ADMISSION) ----------------
+// Alur: calon_santri -> diterima -> terdaftar (satu langkah maju saja,
+// ditegakkan di dataService.updateApplicantStatus). Baca: admin +
+// kepala_sekolah (ADMISSION_VIEW_ROLES, lihat guard di render()). Tulis
+// (tambah calon santri, ubah status): admin saja -- dicek dua kali, di UI
+// (canWrite di bawah) dan di data layer, sama pola dengan Pengaturan
+// Institusi dan Input Presensi.
+async function renderAdmission() {
+  const canWrite = state.user.role === 'admin';
+  const applicants = await dataService.getApplicants(state.user);
+
+  const formPanel = canWrite ? `
+    <div class="panel" style="margin-bottom:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h2 class="panel-title" style="margin:0;">Daftar Calon Santri</h2>
+        <button class="btn-primary" type="button" data-action="toggleAdmissionForm"
+          style="width:auto;padding:8px 16px;">
+          ${state.admissionFormOpen ? 'Batal' : '+ Calon Santri Baru'}
+        </button>
+      </div>
+      ${state.admissionFormOpen ? `
+        <form onsubmit="handleCreateApplicant(event)" style="margin-top:16px;border-top:1px solid var(--line);padding-top:16px;">
+          <div style="display:flex;gap:16px;">
+            <div class="field" style="flex:1;">
+              <label for="ap-nama">Nama Lengkap</label>
+              <input id="ap-nama" type="text" required style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;">
+            </div>
+            <div class="field" style="flex:1;">
+              <label for="ap-tgl-lahir">Tanggal Lahir</label>
+              <input id="ap-tgl-lahir" type="date" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;">
+            </div>
+            <div class="field" style="width:140px;">
+              <label for="ap-jk">Jenis Kelamin</label>
+              <select id="ap-jk" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;">
+                <option value="L">Laki-laki</option>
+                <option value="P">Perempuan</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:16px;">
+            <div class="field" style="flex:1;">
+              <label for="ap-asal">Asal Sekolah</label>
+              <input id="ap-asal" type="text" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;">
+            </div>
+            <div class="field" style="flex:1;">
+              <label for="ap-wali">Nama Wali</label>
+              <input id="ap-wali" type="text" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;">
+            </div>
+            <div class="field" style="flex:1;">
+              <label for="ap-telp">Telepon Wali</label>
+              <input id="ap-telp" type="text" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;">
+            </div>
+          </div>
+          <div class="field">
+            <label for="ap-catatan">Catatan (opsional)</label>
+            <textarea id="ap-catatan" rows="2" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-family:inherit;"></textarea>
+          </div>
+          <button class="btn-primary" type="submit" style="width:auto;padding:9px 18px;">Simpan Calon Santri</button>
+          ${state.admissionError ? `<div class="login-error" style="margin-top:12px;margin-bottom:0;">${state.admissionError}</div>` : ''}
+        </form>
+      ` : ''}
+    </div>
+  ` : '';
+
+  const rows = applicants.map(a => {
+    const enrollFormOpen = state.admissionEnrollingId === a.id;
+    let actionHtml = '';
+    if (canWrite && a.status === 'calon_santri') {
+      actionHtml = `<button class="btn-primary" type="button" data-action="acceptApplicant" data-applicant-id="${a.id}" style="width:auto;padding:6px 14px;font-size:12.5px;">Terima</button>`;
+    } else if (canWrite && a.status === 'diterima') {
+      actionHtml = `<button class="btn-primary" type="button" data-action="${enrollFormOpen ? 'cancelEnrollForm' : 'openEnrollForm'}" data-applicant-id="${a.id}" style="width:auto;padding:6px 14px;font-size:12.5px;">${enrollFormOpen ? 'Batal' : 'Daftarkan sebagai Santri'}</button>`;
+    } else if (a.status === 'terdaftar' && a.santri_id) {
+      actionHtml = `<a data-action="openSantri" data-santri-id="${a.santri_id}" style="color:var(--primary-700);font-weight:600;font-size:12.5px;">Lihat profil santri →</a>`;
+    }
+
+    return `
+      <tr>
+        <td>${a.nama}</td>
+        <td>${a.asal_sekolah || '-'}</td>
+        <td>${a.nama_wali || '-'}</td>
+        <td>${a.tanggal_daftar ? new Date(a.tanggal_daftar).toLocaleDateString('id-ID', { dateStyle: 'medium' }) : '-'}</td>
+        <td>${statusBadgeHtml(a.status)}</td>
+        <td>${actionHtml}</td>
+      </tr>
+      ${enrollFormOpen ? `
+      <tr>
+        <td colspan="6" style="background:var(--bg);">
+          ${state.admissionEnrollForm}
+        </td>
+      </tr>` : ''}
+    `;
+  }).join('');
+
+  return `
+    <h1 class="page-title">Penerimaan Santri Baru</h1>
+    <p class="page-sub">Alur: Calon Santri → Diterima → Terdaftar. Setiap langkah maju satu tahap, tidak bisa loncat.</p>
+    ${formPanel}
+    <div class="panel">
+      ${applicants.length === 0
+        ? `<div class="empty-state">Belum ada calon santri.</div>`
+        : `<table>
+            <thead><tr><th>Nama</th><th>Asal Sekolah</th><th>Nama Wali</th><th>Tgl Daftar</th><th>Status</th><th></th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>`}
+    </div>
+  `;
+}
+
+async function toggleAdmissionForm() {
+  state.admissionFormOpen = !state.admissionFormOpen;
+  state.admissionError = null;
+  await render();
+}
+
+async function handleCreateApplicant(event) {
+  event.preventDefault();
+  state.admissionError = null;
+  try {
+    await dataService.createApplicant({
+      nama: document.getElementById('ap-nama').value.trim(),
+      tanggalLahir: document.getElementById('ap-tgl-lahir').value || null,
+      jenisKelamin: document.getElementById('ap-jk').value,
+      asalSekolah: document.getElementById('ap-asal').value.trim() || null,
+      namaWali: document.getElementById('ap-wali').value.trim() || null,
+      teleponWali: document.getElementById('ap-telp').value.trim() || null,
+      catatan: document.getElementById('ap-catatan').value.trim() || null,
+    }, state.user);
+    state.admissionFormOpen = false;
+    await render();
+  } catch (err) {
+    if (window.SISAF_reportHandledError) window.SISAF_reportHandledError('handleCreateApplicant', err);
+    state.admissionError = err.message || 'Gagal menyimpan calon santri.';
+    await render();
+  }
+}
+
+async function acceptApplicant(el) {
+  const applicantId = el.dataset.applicantId;
+  try {
+    await dataService.updateApplicantStatus(applicantId, 'diterima', state.user);
+    await render();
+  } catch (err) {
+    if (window.SISAF_reportHandledError) window.SISAF_reportHandledError('acceptApplicant', err);
+    alert(err.message || 'Gagal mengubah status.');
+  }
+}
+
+// Membangun HTML form "Daftarkan sebagai Santri" -- dipisah dari
+// openEnrollForm supaya bisa dipanggil ulang dari handleEnrollApplicant
+// saat validasi gagal, TANPA fetch ulang kelas/wali dan TANPA menimpa
+// state.admissionEnrollError balik ke null (bug yang sempat terjadi saat
+// pertama ditulis: memanggil openEnrollForm() lagi di catch block diam-diam
+// menghapus pesan error yang baru saja di-set, karena openEnrollForm selalu
+// me-reset error ke null di awal).
+function buildEnrollFormHtml(applicantId, kelasList, waliList) {
+  return `
+    <form onsubmit="handleEnrollApplicant(event, '${applicantId}')" style="max-width:560px;padding:12px 0;">
+      <div style="display:flex;gap:16px;">
+        <div class="field" style="flex:1;">
+          <label for="enroll-nis">NIS</label>
+          <input id="enroll-nis" type="text" required style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;">
+        </div>
+        <div class="field" style="flex:1;">
+          <label for="enroll-kelas">Kelas</label>
+          <select id="enroll-kelas" required style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;">
+            ${kelasList.map(k => `<option value="${k.id}">${k.nama}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field" style="flex:1;">
+          <label for="enroll-wali">Wali Santri</label>
+          <select id="enroll-wali" required style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;">
+            ${waliList.map(w => `<option value="${w.id}">${w.nama}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <button class="btn-primary" type="submit" style="width:auto;padding:7px 16px;font-size:12.5px;">Terbitkan Status Terdaftar</button>
+      ${state.admissionEnrollError ? `<div class="login-error" style="margin-top:10px;margin-bottom:0;">${state.admissionEnrollError}</div>` : ''}
+    </form>
+  `;
+}
+
+async function openEnrollForm(el) {
+  const applicantId = el.dataset.applicantId;
+  const [kelasList, waliList] = await Promise.all([
+    dataService.getKelasList(),
+    dataService.getWaliSantriList(),
+  ]);
+  state.admissionEnrollingId = applicantId;
+  state.admissionEnrollError = null;
+  state.admissionEnrollKelasList = kelasList;
+  state.admissionEnrollWaliList = waliList;
+  state.admissionEnrollForm = buildEnrollFormHtml(applicantId, kelasList, waliList);
+  await render();
+}
+
+async function cancelEnrollForm() {
+  state.admissionEnrollingId = null;
+  state.admissionEnrollForm = null;
+  state.admissionEnrollError = null;
+  state.admissionEnrollKelasList = null;
+  state.admissionEnrollWaliList = null;
+  await render();
+}
+
+async function handleEnrollApplicant(event, applicantId) {
+  event.preventDefault();
+  const nis = document.getElementById('enroll-nis').value.trim();
+  const kelasId = document.getElementById('enroll-kelas').value;
+  const waliSantriId = document.getElementById('enroll-wali').value;
+  try {
+    await dataService.updateApplicantStatus(applicantId, 'terdaftar', state.user, {
+      nis, kelasId, waliSantriId,
+    });
+    state.admissionEnrollingId = null;
+    state.admissionEnrollForm = null;
+    state.admissionEnrollError = null;
+    state.admissionEnrollKelasList = null;
+    state.admissionEnrollWaliList = null;
+    await render();
+  } catch (err) {
+    if (window.SISAF_reportHandledError) window.SISAF_reportHandledError('handleEnrollApplicant', err);
+    state.admissionEnrollError = err.message || 'Gagal mendaftarkan santri.';
+    state.admissionEnrollForm = buildEnrollFormHtml(applicantId, state.admissionEnrollKelasList, state.admissionEnrollWaliList);
     await render();
   }
 }
@@ -929,6 +1168,42 @@ async function renderTabStatus(santri) {
 
   if (!canManage) return historyPanel;
 
+  // ---------------- GRADUATION CLEARANCE ----------------
+  // Hanya relevan untuk santri yang masih berstatus aktif -- kalau sudah
+  // lulus/keluar dengan cara lain, tombol ini tidak berguna dan berpotensi
+  // membingungkan (mis. tombol "Luluskan" muncul di santri yang sudah
+  // dikeluarkan). Eligibility dicek ulang di data layer saat submit
+  // (graduateSantri) -- panel ini hanya menampilkan hasil cek untuk
+  // membantu admin, BUKAN satu-satunya penjaga aturan.
+  const STATUS_SUDAH_KELUAR = ['lulus', 'mengundurkan_diri', 'dikeluarkan', 'meninggal', 'pindah'];
+  let graduationPanel = '';
+  if (!STATUS_SUDAH_KELUAR.includes(santri.status)) {
+    const cek = await dataService.checkGraduationEligibility(santri.id);
+    graduationPanel = `
+      <div class="panel">
+        <h2 class="panel-title">Kelulusan (Graduation Clearance)</h2>
+        <p class="page-sub" style="margin-top:-8px;">
+          Syarat kelulusan: seluruh tagihan keuangan santri harus berstatus lunas.
+        </p>
+        <p style="font-size:13px;margin:0 0 14px;">
+          Status kelayakan: ${cek.eligible
+            ? `<span class="badge badge-ok">Layak diluluskan</span>`
+            : `<span class="badge badge-danger">Belum layak</span> — ${cek.alasanTidakEligible}`}
+        </p>
+        <form onsubmit="handleGraduateSantri(event, '${santri.id}')">
+          <div class="field" style="max-width:220px;">
+            <label for="graduate-tanggal">Tanggal Efektif Lulus</label>
+            <input id="graduate-tanggal" type="date" required value="${new Date().toISOString().slice(0, 10)}">
+          </div>
+          <button class="btn-primary" type="submit" style="width:auto;padding:9px 18px;" ${cek.eligible ? '' : 'disabled'}>
+            Luluskan Santri
+          </button>
+          ${state.graduationError ? `<div class="login-error" style="margin-top:12px;margin-bottom:0;">${state.graduationError}</div>` : ''}
+        </form>
+      </div>
+    `;
+  }
+
   const optionsHtml = STATUS_MANUAL_OPTIONS
     .filter(key => key !== santri.status)
     .map(key => `<option value="${key}">${STATUS_LABEL[key]}</option>`).join('');
@@ -957,7 +1232,23 @@ async function renderTabStatus(santri) {
     </div>
   `;
 
-  return changePanel + historyPanel;
+  return graduationPanel + changePanel + historyPanel;
+}
+
+async function handleGraduateSantri(event, santriId) {
+  event.preventDefault();
+  const tanggalEfektif = document.getElementById('graduate-tanggal').value;
+  state.graduationError = null;
+  try {
+    await dataService.graduateSantri({
+      santriId, tanggalEfektif, disetujuiOleh: state.user.nama,
+    }, state.user);
+    await render();
+  } catch (err) {
+    if (window.SISAF_reportHandledError) window.SISAF_reportHandledError('handleGraduateSantri', err);
+    state.graduationError = err.message || 'Gagal meluluskan santri.';
+    await render();
+  }
 }
 
 async function handleChangeStatus(event, santriId) {
@@ -1059,6 +1350,10 @@ const ACTION_HANDLERS = {
   openSantri: (el) => openSantri(el.dataset.santriId),
   setTab: (el) => setTab(el.dataset.tab),
   handlePrintRapor: (el) => handlePrintRapor(el.dataset.santriId, el.dataset.semester),
+  toggleAdmissionForm: () => toggleAdmissionForm(),
+  acceptApplicant: (el) => acceptApplicant(el),
+  openEnrollForm: (el) => openEnrollForm(el),
+  cancelEnrollForm: () => cancelEnrollForm(),
 };
 
 function initEventDelegation() {

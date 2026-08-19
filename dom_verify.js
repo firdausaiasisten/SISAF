@@ -72,6 +72,61 @@ async function run() {
       window.state.view = 'ringkasan';
     }
 
+    // Penerimaan Santri (Admission): nav item + access guard + write scope
+    const admissionNav = [...window.document.querySelectorAll('.nav li a')].find(a => a.textContent.includes('Penerimaan Santri'));
+    const shouldSeeAdmissionNav = ['admin', 'kepala_sekolah'].includes(expectedRole);
+    results.push(`  ${(!!admissionNav === shouldSeeAdmissionNav) ? 'PASS' : 'FAIL'}  admission nav visible=${!!admissionNav} (expected ${shouldSeeAdmissionNav})`);
+
+    if (expectedRole === 'admin') {
+      await window.goTo('admission');
+      const santriCountBefore = (await window.dataService.getSantriList(window.state.user)).length;
+
+      // 1) Tambah calon santri baru
+      await window.toggleAdmissionForm();
+      window.document.getElementById('ap-nama').value = 'Uji Coba Dom Verify';
+      window.document.getElementById('ap-asal').value = 'MTs Uji Coba';
+      window.document.getElementById('ap-wali').value = 'Wali Uji Coba';
+      window.document.getElementById('ap-telp').value = '0800xxxx';
+      await window.handleCreateApplicant({ preventDefault: () => {} });
+      const applicantsAfterCreate = await window.dataService.getApplicants(window.state.user);
+      const newApplicant = applicantsAfterCreate.find(a => a.nama === 'Uji Coba Dom Verify');
+      results.push(`  admission: create applicant: ${newApplicant && newApplicant.status === 'calon_santri' ? 'PASS' : 'FAIL'}`);
+
+      // 2) Terima -> diterima
+      await window.acceptApplicant({ dataset: { applicantId: newApplicant.id } });
+      const afterAccept = (await window.dataService.getApplicants(window.state.user)).find(a => a.id === newApplicant.id);
+      results.push(`  admission: accept -> diterima: ${afterAccept.status === 'diterima' ? 'PASS' : 'FAIL (got ' + afterAccept.status + ')'}`);
+
+      // 3) Daftarkan sebagai Santri -> terdaftar (harus otomatis membuat baris santri baru)
+      await window.openEnrollForm({ dataset: { applicantId: newApplicant.id } });
+      const enrollFormVisible = !!window.document.querySelector('#main-content form[onsubmit^="handleEnrollApplicant"]');
+      results.push(`  admission: enroll form rendered: ${enrollFormVisible ? 'PASS' : 'FAIL'}`);
+      window.document.getElementById('enroll-nis').value = '2026.99.9999';
+      const kelasOpt = window.document.getElementById('enroll-kelas');
+      const waliOpt = window.document.getElementById('enroll-wali');
+      kelasOpt.value = kelasOpt.options[0].value;
+      waliOpt.value = waliOpt.options[0].value;
+      await window.handleEnrollApplicant({ preventDefault: () => {} }, newApplicant.id);
+      const afterEnroll = (await window.dataService.getApplicants(window.state.user)).find(a => a.id === newApplicant.id);
+      results.push(`  admission: enroll -> terdaftar: ${afterEnroll.status === 'terdaftar' && afterEnroll.santri_id ? 'PASS' : 'FAIL'}`);
+      const santriCountAfter = (await window.dataService.getSantriList(window.state.user)).length;
+      results.push(`  admission: santri baru otomatis dibuat: ${santriCountAfter === santriCountBefore + 1 ? 'PASS' : 'FAIL (before=' + santriCountBefore + ' after=' + santriCountAfter + ')'}`);
+
+      await window.goTo('ringkasan');
+    } else if (shouldSeeAdmissionNav) {
+      // kepala_sekolah: bisa lihat daftar tapi tidak ada kontrol tulis
+      await window.goTo('admission');
+      const addBtn = window.document.querySelector('#main-content [data-action="toggleAdmissionForm"]');
+      results.push(`  ${expectedRole} should NOT see "+ Calon Santri Baru" button: ${!addBtn ? 'PASS' : 'FAIL'}`);
+      await window.goTo('ringkasan');
+    } else {
+      // role lain: paksa view via state, guard di render() harus menolak
+      window.state.view = 'admission';
+      await window.render();
+      results.push(`  non-authorized role forced to 'admission' gets redirected: ${window.state.view !== 'admission' ? 'PASS' : 'FAIL'}`);
+      window.state.view = 'ringkasan';
+    }
+
     // navigate to daftar santri, then open first santri, then click through tabs
     await window.goTo('daftar');
     const santriLinks = window.document.querySelectorAll('#main-content a[data-action="openSantri"]');
@@ -125,6 +180,8 @@ async function run() {
         await window.setTab('status');
         const statusForm = window.document.querySelector('#main-content form[onsubmit^="handleChangeStatus"]');
         results.push(`  admin sees change-status form: ${statusForm ? 'YES' : 'MISSING'}`);
+        const graduateForm = window.document.querySelector('#main-content form[onsubmit^="handleGraduateSantri"]');
+        results.push(`  admin sees graduation clearance form (santri masih aktif): ${graduateForm ? 'YES' : 'MISSING'}`);
         const historyBefore = (await window.dataService.getStatusHistoryBySantri(santriId)).length;
         window.document.getElementById('status-baru').value = 'cuti';
         window.document.getElementById('status-tanggal').value = '2026-08-15';
