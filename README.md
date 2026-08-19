@@ -338,6 +338,12 @@ EduCore).
 
 ### Prioritas tinggi — celah nyata dibanding aplikasi sejenis
 
+> Status per fase ini: item #1 **selesai** (lihat "Presensi Harian Santri"
+> di atas). Item #2 dan #3, ditambah item #4 (hafalan, dari daftar
+> "prioritas sedang" di bawah), sekarang punya rencana kerja rinci siap
+> dikerjakan tim paralel — lihat **"Fase 6 — Roadmap Pengembangan
+> Selanjutnya"** di bagian bawah README ini.
+
 1. **Presensi harian santri** (bukan cuma catatan kedisiplinan
    insidental). Hampir semua pembanding punya ini sebagai modul
    terpisah dari "pelanggaran". Cocok jadi tabel baru
@@ -404,7 +410,7 @@ Untuk konteks — bukan berarti semua pembanding lebih unggul:
 
 Bagian ini memberi **gambaran besar lintas waktu** — kenapa urutannya
 begini, apa yang diblokir oleh apa, dan kapan keputusan bisnis (bukan
-teknis) diperlukan. Detail task per file/PR ada di bagian "Fase 1–5" di
+teknis) diperlukan. Detail task per file/PR ada di bagian "Fase 1–6" di
 bawah; bagian ini menjelaskan *rasionalnya* dan menyatukannya dengan
 rekomendasi fitur dari riset komparatif di atas. Estimasi horizon waktu
 bersifat relatif terhadap kecepatan tim (jumlah kontributor aktif), bukan
@@ -439,23 +445,25 @@ fondasi yang belum ada.
 lulus, plus fitur operasional harian yang paling sering muncul di
 aplikasi sejenis (lihat "Riset Komparatif" di atas).
 
-- **Fase 3 (Admission & Graduation)** — data layer sudah ditulis
-  (lihat commit `faa7cec`), UI belum. Baru bisa dilanjutkan penuh
-  setelah Fase 1 selesai, karena pipeline penerimaan punya lebih banyak
-  state transisi dan validasi dokumen daripada yang nyaman disimulasikan
-  dengan mock saja.
+- **Fase 3 (Admission & Graduation)** — **sudah selesai** (data layer di
+  commit `faa7cec`, UI menyusul di `ea458e9`), dikerjakan mendahului
+  urutan horizon ini atas keputusan eksplisit user — lihat catatan
+  trade-off di bagian Fase 3 di bawah.
 - **Buku kas / tabungan santri** (prioritas tinggi dari riset
   komparatif) — beda dari `keuanganSantri` (tagihan searah); ini saldo
   dua arah (setor/tarik). Cocok dikerjakan berdampingan dengan Fase 3
-  karena sama-sama menyentuh alur keuangan per santri.
+  karena sama-sama menyentuh alur keuangan per santri. **Belum
+  dikerjakan** — rincian task per file ada di Fase 6.1 di bawah.
 - **Log aktivitas / audit trail** (prioritas tinggi) — perluasan wajar
   dari `errorTracking.js` yang sudah ada. Penting justru **sebelum**
   data produksi mulai terisi lewat Admission, supaya sejak hari pertama
   ada jejak siapa-mengubah-apa-kapan, bukan ditambahkan belakangan
-  setelah ada insiden.
-- **Perizinan pulang/keluar asrama** (prioritas sedang) — bisa dibangun
-  di atas pola `changeStudentStatus` yang sudah ada, jadi biaya
-  implementasinya relatif kecil begitu Fase 1 selesai.
+  setelah ada insiden. **Belum dikerjakan** — rincian di Fase 6.2.
+- **Perizinan pulang/keluar asrama** (prioritas sedang) — **sudah
+  selesai** (commit `cf95586`, dikerjakan langsung ke `main` tanpa
+  menunggu Fase 1, sama seperti Admission — pola "desain + mock dulu,
+  migrasi ditulis tapi menunggu Postgres nyata" yang sudah jadi standar
+  di repo ini).
 
 ### Horizon 3 — Komunikasi & Akses yang Lebih Luas
 
@@ -473,7 +481,8 @@ institusi berkomunikasi keluar, sekarang berbasis backend yang sudah aman.
   secara teknis.
 - **Pelacakan hafalan Al-Qur'an per juz/surat** (prioritas sedang) —
   kalau institusi memang fokus tahfizh, ini modul terpisah yang lebih
-  berguna daripada baris nilai akademik biasa seperti sekarang.
+  berguna daripada baris nilai akademik biasa seperti sekarang. **Belum
+  dikerjakan** — rincian di Fase 6.3.
 
 ### Horizon 4 — Perluasan Opsional & Keputusan Bisnis
 
@@ -616,6 +625,111 @@ di atas untuk alasan keamanannya).
 Jangan mulai tanpa keputusan eksplisit dari pemilik produk — ini
 perubahan besar ke RLS (per-tenant, bukan cuma per-role). `institution_settings`
 sudah disiapkan arahnya (lihat bagian terkait di atas).
+
+### Fase 6 — Roadmap Pengembangan Selanjutnya (3 Fitur Prioritas)
+
+Tiga fitur ini diambil langsung dari bagian "Prioritas tinggi/sedang —
+celah nyata dibanding aplikasi sejenis" di atas (hasil riset komparatif
+`f31eb80`), dan direferensikan singkat dari Horizon 2 & 3 di atas —
+bagian ini berisi rinciannya per file/PR. Presensi Harian (prioritas #1
+riset itu, `fd2a479`–`75644e6`) dan Perizinan Pulang/Keluar Asrama
+(prioritas sedang, `cf95586`) sudah selesai duluan **di luar urutan
+Fase 6 ini** — masing-masing dikerjakan langsung begitu ada kapasitas,
+bukan menunggu tiga fitur di bawah ini selesai lebih dulu. Tiga berikut
+inilah yang **masih tersisa** dan paling bernilai untuk dikerjakan
+sekarang. Ketiganya **independen satu sama lain** —
+tidak ada urutan wajib, dan tidak ada ketergantungan pada Fase 1
+(Supabase nyata) untuk *mulai* mengerjakan (pola sama seperti Presensi
+dan Admission: desain + mock dulu, migrasi ditulis tapi menunggu
+project Supabase untuk dieksekusi).
+
+**Aturan kerja paralel untuk fase ini** (tambahan dari aturan umum di
+atas): setiap fitur menyentuh file baru untuk data/migrasinya sendiri,
+tapi ketiganya **sama-sama akan menyentuh `app.js` (nav baru), `styles.css`
+kalau perlu komponen baru, dan `tests/data_service_contract.test.js`
+(baris di `REQUIRED_FUNCTIONS`)**. Untuk `app.js` khususnya: tiap tim
+menambah fungsi `render<NamaFitur>()` + handler baru sendiri (pola yang
+sama dipakai `renderAdmission`/`renderPresensiInput`), **jangan mengedit
+fungsi render fitur lain**, dan tambahkan entry `NAV_ITEMS` masing-masing
+di baris terpisah supaya git merge tidak konflik di baris yang sama.
+Kalau tiga tim mengedit `app.js` di waktu yang sama, koordinasi urutan
+merge dulu di grup — PR kedua & ketiga tinggal `git rebase` di atas PR
+pertama yang sudah masuk `main`.
+
+#### 6.1 — Buku Kas / Tabungan Santri (uang saku)
+
+**Kenapa prioritas tinggi:** beda dari `keuanganSantri` (tagihan SPP
+sekolah) yang sudah ada, ini saldo & mutasi dua arah — orang tua/wali
+menitipkan uang saku ke pesantren, santri menariknya bertahap. Modul
+ini eksplisit ada di PesantrenCMS dan Digitren (lihat riset komparatif
+`f31eb80`) dan relevan langsung dengan Bagian 12 (Strategi Keuangan)
+di `Dokumen_Induk_Transformasi_Pesantren_Lamjampok.docx` — pesantren
+memang menitip-kelola uang santri secara operasional, bukan sekadar
+ide fitur.
+
+| Yang dibangun | File |
+|---|---|
+| Tabel baru `tabungan_santri` (saldo per santri) + `tabungan_mutasi` (setor/tarik, riwayat tidak ditimpa — pola sama dengan `student_status_histories`) | migrasi baru `migrations/schema_sisaf_04_tabungan.sql` |
+| Seed mock + `getTabunganBySantri`, `getMutasiTabunganBySantri`, `setorTabungan`, `tarikTabungan` (validasi saldo cukup sebelum tarik) | `mockDataService.js` + `supabaseDataService.js` (signature identik, tambahkan ke `REQUIRED_FUNCTIONS`) |
+| Tab baru **"Tabungan"** di halaman detail santri (tambah ke `TABS` di `app.js`) — saldo + riwayat mutasi, read-only untuk semua role yang bisa lihat santri tsb | `app.js` (`renderTabTabungan`, entri baru di `TABS`) |
+| Form setor/tarik — siapa yang boleh input transaksi perlu diputuskan (kandidat: `admin` + `bendahara`, sama dengan otorisasi Keuangan Santri yang sudah ada) | `app.js` (form + handler baru), disepakati bersama Backend Lead sebelum ditulis di RLS |
+| RLS: baca sama dengan scope Keuangan Santri (per-role), tulis admin+bendahara saja | `migrations/schema_sisaf_04_tabungan.sql` + assertion baru di `tests/rls_test.sql` |
+
+**Belum diputuskan (didiskusikan tim sebelum mulai):** apakah saldo bisa
+minus (kasbon) atau harus selalu ≥ 0 — pilihan ini menentukan constraint
+`check` di kolom saldo, jadi harus diputuskan sebelum menulis migrasi,
+bukan sesudah.
+
+#### 6.2 — Log Aktivitas / Audit Trail
+
+**Kenapa prioritas tinggi:** SISAF sudah punya riwayat status santri
+(`student_status_histories`) yang tidak ditimpa, tapi belum ada log umum
+untuk "siapa mengubah apa, kapan" di seluruh aplikasi — misalnya siapa
+mengubah `institution_settings`, siapa menambah nilai akademik, siapa
+menghapus applicant. Penting untuk akuntabilitas data pribadi santri,
+dan PesantrenCMS (pembanding di riset `f31eb80`) punya ini secara
+eksplisit. Ini juga perluasan wajar dari `errorTracking.js` yang sudah
+ada — pola self-hosted yang sama (tanpa Sentry/pihak ketiga, karena data
+santri sensitif), tinggal diperluas dari "log error" jadi "log aksi".
+
+| Yang dibangun | File |
+|---|---|
+| Tabel `audit_log` (siapa/`user_id`, aksi, entitas+id yang disentuh, nilai lama→baru sebagai JSON, timestamp) | migrasi baru `migrations/schema_sisaf_05_audit_log.sql` |
+| Fungsi `recordAuditLog(action, entity, entityId, before, after, currentUser)` dipanggil dari fungsi tulis yang sudah ada (`updateInstitutionSettings`, `changeStudentStatus`, `updateApplicantStatus`, dst.) — **bukan fitur baru yang berdiri sendiri, tapi menyisip ke fungsi existing**, jadi butuh koordinasi ekstra supaya tidak bentrok dengan tim lain yang kebetulan sedang menyentuh fungsi yang sama | `mockDataService.js` + `supabaseDataService.js` |
+| Tampilan **"Log Aktivitas"** — halaman baru di nav utama (bukan tab per-santri, karena lintas-santri), admin-only, dengan filter tanggal/user/entitas | `app.js` (view baru `renderAuditLog`, entri `NAV_ITEMS` `roles: ['admin']`) |
+| RLS: hanya admin yang boleh membaca; **tidak ada yang boleh menghapus/mengubah baris log** (append-only, ditegakkan lewat `revoke update, delete` di RLS, bukan cuma dilarang di UI) | `migrations/schema_sisaf_05_audit_log.sql` |
+
+**Catatan desain penting:** karena fungsi ini "menyisip" ke banyak
+fungsi tulis yang sudah ada (bukan menambah fungsi baru murni),
+**tim yang mengerjakan ini sebaiknya mulai paling akhir** dari ketiga
+fitur di fase ini, atau koordinasi intens dengan siapa pun yang sedang
+menyentuh `mockDataService.js`/`supabaseDataService.js` di waktu
+bersamaan — risiko konflik merge paling tinggi dari tiga fitur ini.
+
+#### 6.3 — Pelacakan Hafalan Al-Qur'an per Juz/Surat
+
+**Kenapa prioritas tinggi:** seed `nilaiAkademik` saat ini menyamakan
+"Tahfizh" dengan mata pelajaran biasa (nilai huruf A/B/C), padahal untuk
+pesantren yang fokus tahfizh, progres per juz/surat jauh lebih berguna
+dan lebih sering dicek orang tua. `Dokumen_Induk_Transformasi_Pesantren_Lamjampok.docx`
+eksplisit menjadikan ini indikator lulusan (Bagian 5, karakter #4
+"Berilmu Al-Qur'an" — target 5 juz/15 juz tergantung program) dan KPI
+strategis (K12: "Jumlah hafizh Al-Qur'an per angkatan"), dan repo
+pembanding Santri Analytics menjadikan modul ini utama, bukan sekadar
+baris nilai.
+
+| Yang dibangun | File |
+|---|---|
+| Tabel `hafalan_santri` (santri_id, juz/surat, tanggal setor, status: `lancar`/`perlu_muroja'ah`/`belum_lancar`, penguji) — desain skema (per juz vs per surat vs keduanya) didiskusikan dulu dengan pengasuhan/ubudiyah, ini bukan keputusan teknis murni | migrasi baru `migrations/schema_sisaf_06_hafalan.sql` |
+| Seed mock + `getHafalanBySantri`, `recordSetoranHafalan`, `getRingkasanHafalanBySantri` (total juz lancar, progres ke target program) | `mockDataService.js` + `supabaseDataService.js` |
+| Tab baru **"Hafalan"** di halaman detail santri (progres per juz, riwayat setoran) — menggantikan baris "Tahfizh" yang sekarang tercampur di tab Akademik (`nilaiAkademik`), **tanpa menghapus data lama** — cukup berhenti menambah baris baru berkategori Tahfizh ke `nilaiAkademik` setelah modul ini aktif | `app.js` (`renderTabHafalan`, entri baru di `TABS`) |
+| Form input setoran — kandidat penanggung jawab: role yang sama dengan yang mengelola Ubudiyah/Musyrif di dokumen JobDesc (`09_JobDesc_KPI_Pesantren_MUSYKER_2026.docx`, jabatan `UBUD-001`/`MUSYRIF-001`) — SISAF belum punya role sedetail itu, jadi keputusan sementara: `admin` + `wali_kelas` dulu (pola sama dengan Presensi), diperluas kalau modul role granular dibangun | `app.js` (form + handler baru) |
+| RLS: baca mengikuti scope santri yang sudah ada (`_filterSantriByRole`), tulis admin+wali_kelas | `migrations/schema_sisaf_06_hafalan.sql` + assertion baru di `tests/rls_test.sql` |
+
+**Belum diputuskan:** skema per-juz (30 baris tetap per santri) vs
+per-surat (114 baris, lebih presisi tapi lebih berat) vs hybrid —
+putuskan bersama sebelum menulis migrasi, karena mengubah granularitas
+setelah ada data produksi butuh migrasi data, bukan cuma `ALTER TABLE`.
 
 ### Ringkasan pembagian peran (siapa pegang apa secara umum)
 
