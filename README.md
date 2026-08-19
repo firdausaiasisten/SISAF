@@ -107,6 +107,55 @@ sudah ditulis lengkap. Migrasi & RLS presensi **belum dieksekusi ke Postgres
 nyata**, sama seperti modul-modul Supabase lain — lihat "Status migrasi
 Supabase" di bawah.
 
+### Penerimaan Santri (Admission) & Kelulusan (Graduation)
+
+Fitur ini dikerjakan mendahului "Jangan mulai Fase 3 sebelum Fase 1 selesai"
+di README (lihat commit `faa7cec`) atas keputusan eksplisit user, karena
+project Supabase memang belum bisa dibuat dari sesi mana pun sampai sekarang
+— menunggu itu berarti fitur tidak pernah dibangun sama sekali. Konsekuensinya
+sama seperti seluruh modul lain: jalur `supabaseDataService.js` 0% teruji
+terhadap Postgres nyata, hanya kontrak/mock yang diverifikasi (`node --test`
++ `dom_verify.js`).
+
+**UI sekarang sudah ada** (menyusul commit `faa7cec` yang baru data layer):
+
+- **Nav "Penerimaan Santri"** (`admin` + `kepala_sekolah`, sesuai otorisasi
+  `getApplicants`). `kepala_sekolah` hanya baca — tombol "+ Calon Santri
+  Baru" dan aksi Terima/Daftarkan disembunyikan di UI (`canWrite` di
+  `renderAdmission`), selain ditolak juga di data layer (admin-only).
+- **Tabel calon santri** dengan badge status (`STATUS_LABEL`/`STATUS_BADGE_CLASS`
+  yang sudah ada dipakai ulang, bukan didefinisikan lagi) + tombol aksi yang
+  berubah sesuai status: `calon_santri` → tombol **Terima**; `diterima` →
+  tombol **Daftarkan sebagai Santri** yang membuka form inline (NIS, kelas,
+  wali santri — dropdown wali santri dipasok fungsi baru `getWaliSantriList`,
+  ditambahkan ke kedua data service + parity list test); `terdaftar` →
+  tautan langsung ke profil santri yang otomatis dibuat.
+- **Form "Calon Santri Baru"** (admin) — toggle inline, bukan modal terpisah,
+  konsisten dengan pola form presensi yang sudah ada.
+- **Kelulusan** dipindah ke tab "Riwayat Status" halaman detail santri
+  (bukan halaman terpisah) supaya konteks santri & riwayat status tetap satu
+  layar. Panel "Kelulusan (Graduation Clearance)" hanya muncul untuk santri
+  yang belum berstatus keluar (`lulus`/`mengundurkan_diri`/`dikeluarkan`/
+  `meninggal`/`pindah`), menampilkan hasil `checkGraduationEligibility`
+  (badge layak/belum + alasan), dan tombol **Luluskan Santri** dinonaktifkan
+  kalau belum layak — sama seperti seluruh modul lain, ini bantuan UI, BUKAN
+  satu-satunya penjaga aturan; `graduateSantri` di data layer tetap mengecek
+  ulang eligibility sebelum memproses.
+
+**Yang BELUM ada / catatan jujur:**
+- `updateApplicantStatus` di jalur Supabase belum satu transaksi Postgres
+  (dicatat sejak commit `faa7cec`) — migrasikan ke RPC transactional sebelum
+  dipakai rutin di production.
+- Tidak ada halaman "riwayat kelulusan" terpisah — untuk melihat santri yang
+  sudah lulus, cek `daftar santri` (badge merah "Lulus") lalu buka riwayat
+  statusnya.
+- `dom_verify.js` diperluas dengan alur penuh (buat calon santri → terima →
+  daftarkan → verifikasi baris santri baru otomatis terbentuk) + pengecekan
+  guard akses per role, dan `tests/data_service_contract.test.js` mendapat
+  test baru untuk `getWaliSantriList`. Hasil sebelum ditulis di sini:
+  `node --test tests/data_service_contract.test.js` 26/26 pass (1 skip =
+  suite supabase), `node dom_verify.js` PASS penuh 5 role.
+
 ### Notifikasi WhatsApp — status: SIMULASI, belum kirim sungguhan
 
 Tidak ada pesan WhatsApp nyata yang terkirim dari versi ini. Alasannya bukan
@@ -529,10 +578,13 @@ berbeda selama tidak menyentuh file yang sama di waktu yang sama.
 Fase 1 (backend Supabase nyata) masih diblokir menunggu project Supabase
 dibuat — lihat bagian "Status blocker" di README.
 
-**Jangan mulai Fase 3 sebelum Fase 1 selesai** — modul Admission/Graduation
-butuh backend nyata untuk pipeline status yang lebih kompleks dari yang
-mock bisa simulasikan dengan baik (banyak state transisi, validasi
-dokumen, dsb.).
+**Catatan:** aturan "jangan mulai Fase 3 sebelum Fase 1" di bawah ini
+**tidak diikuti** — Fase 3 (data layer di `faa7cec`, lalu UI di commit
+setelahnya) dikerjakan lebih dulu atas keputusan eksplisit user, karena
+Fase 1 (project Supabase nyata) tidak bisa dibuat dari sesi non-manusia
+mana pun. Menunggu Fase 1 berarti Fase 3 tidak pernah dikerjakan. Trade-off
+ini diterima secara sadar: jalur `supabaseDataService.js` untuk Admission/
+Graduation 0% teruji terhadap Postgres nyata, sama seperti modul lain.
 
 ### Fase 3 — Modul Admission & Graduation
 
@@ -540,12 +592,13 @@ Enum `status_santri` dan kolom `admission_id`/`exit_date`/`exit_reason`
 di tabel `santri` sudah disiapkan (lihat bagian "Fondasi: Student Master"
 di atas) supaya fase ini tidak perlu `ALTER TABLE` terhadap data produksi.
 
-| Tugas | File yang disentuh | Penanggung jawab |
+| Tugas | File yang disentuh | Status |
 |---|---|---|
-| Desain tabel `applicants` + alur `calon_santri` → `diterima` → `terdaftar` | migrasi baru `schema_sisaf_03_admission.sql` | **Backend Lead** |
-| UI form pendaftaran calon santri baru | `app.js` (fungsi render baru, **jangan edit fungsi render yang sudah ada** — tambah fungsi baru dan panggil dari router) | **Frontend Dev A** |
-| Alur Graduation clearance (syarat kelulusan, cek keuangan lunas, dst.) | `app.js` + fungsi baru di `dataService`/kedua implementasi | **Frontend Dev A + Backend Dev** (koordinasi) |
-| RLS untuk tabel `applicants` | `schema_sisaf_03_admission.sql` | **Backend Lead** |
+| Desain tabel `applicants` + alur `calon_santri` → `diterima` → `terdaftar` | migrasi `schema_sisaf_03_admission.sql` | **Selesai** (skema tertulis; **belum dijalankan** ke Postgres nyata — sama seperti migrasi lain) |
+| Data layer Admission/Graduation (`getApplicants`, `createApplicant`, `updateApplicantStatus`, `checkGraduationEligibility`, `graduateSantri`) | `mockDataService.js` + `supabaseDataService.js` | **Selesai**, diuji lewat `tests/data_service_contract.test.js` (mock) |
+| UI form pendaftaran calon santri baru + tabel status + form "daftarkan sebagai santri" | `app.js` (`renderAdmission` + handler terkait, fungsi baru — tidak mengedit fungsi render lain) | **Selesai** — lihat bagian "Penerimaan Santri & Kelulusan" di atas |
+| Alur Graduation clearance (syarat kelulusan, cek keuangan lunas, dst.) | `app.js` (panel di tab "Riwayat Status") + `checkGraduationEligibility`/`graduateSantri` (data layer, sudah ada) | **Selesai** |
+| RLS untuk tabel `applicants` | `migrations/rls_test.sql` (assertion) + `schema_sisaf_03_admission.sql` (policy) | Tertulis, **belum diuji terhadap Postgres nyata** (blocker sama dengan Fase 1) |
 
 ### Fase 4 — Notifikasi WhatsApp Nyata
 

@@ -587,6 +587,12 @@ const supabaseDataService = {
     _throwIfError(error, 'getWaliSantriById');
     return data || null;
   },
+
+  async getWaliSantriList() {
+    const { data, error } = await _getClient().from('wali_santri').select('*').order('nama');
+    _throwIfError(error, 'getWaliSantriList');
+    return data;
+  },
 };
 
 window.supabaseDataService = supabaseDataService;

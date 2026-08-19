@@ -67,7 +67,7 @@ function tryLoadSupabaseImpl() {
   }
 }
 
-// Daftar 23 fungsi wajib ada di kedua implementasi (paritas signature).
+// Daftar 24 fungsi wajib ada di kedua implementasi (paritas signature).
 const REQUIRED_FUNCTIONS = [
   'login', 'logout',
   'getKelasList',
@@ -82,7 +82,7 @@ const REQUIRED_FUNCTIONS = [
   'getInstitutionSettings', 'updateInstitutionSettings',
   'getNotifikasiBySantri', 'getNotifikasiSettings', 'updateNotifikasiSettings',
   'simulateSendNotifikasi',
-  'getKelasById', 'getWaliSantriById',
+  'getKelasById', 'getWaliSantriById', 'getWaliSantriList',
   'getApplicants', 'createApplicant', 'updateApplicantStatus',
   'checkGraduationEligibility', 'graduateSantri',
   'getIzinPulangBySantri', 'createIzinPulang', 'updateIzinPulangStatus',
@@ -316,6 +316,13 @@ function runContractSuite(label, getImpl) {
     const impl = getImpl();
     assert.equal(await impl.getKelasById('tidak-ada'), null);
     assert.equal(await impl.getWaliSantriById('tidak-ada'), null);
+  });
+
+  test(`[${label}] getWaliSantriList mengembalikan seluruh wali santri (dipakai form "Daftarkan sebagai Santri")`, async () => {
+    const impl = getImpl();
+    const list = await impl.getWaliSantriList();
+    assert.ok(Array.isArray(list) && list.length > 0, 'harus ada minimal 1 wali santri dari seed');
+    assert.ok(list[0].id && list[0].nama, 'tiap baris minimal punya id & nama untuk ditampilkan di <select>');
   });
 
   test(`[${label}] getApplicants: admin & kepala_sekolah bisa lihat, wali_kelas tidak (deny by default)`, async () => {

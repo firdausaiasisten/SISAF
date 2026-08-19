@@ -627,6 +627,14 @@ const mockDataService = {
     await _delay();
     return MockDB.waliSantri.find(w => w.id === waliId) || null;
   },
+
+  // Dipakai form "Daftarkan sebagai Santri" (Admission) untuk memilih wali
+  // santri yang sudah ada di sistem. Baca saja, sama otorisasi longgarnya
+  // dengan getKelasList (bukan data sensitif per-santri).
+  async getWaliSantriList() {
+    await _delay();
+    return MockDB.waliSantri;
+  },
 };
 
 // ---------------- Otorisasi eksplisit di layer JS ----------------
